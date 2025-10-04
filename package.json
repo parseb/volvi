@@ -1,0 +1,29 @@
+{
+  "name": "options-protocol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Decentralized options protocol with signature-based orderbook",
+  "scripts": {
+    "dev": "concurrently \"pnpm dev:backend\" \"pnpm dev:indexer\" \"pnpm dev:frontend\"",
+    "dev:backend": "cd backend && pnpm dev",
+    "dev:indexer": "cd indexer && pnpm dev",
+    "dev:frontend": "cd frontend && pnpm dev",
+    "build": "pnpm build:contracts && pnpm build:backend && pnpm build:indexer && pnpm build:frontend",
+    "build:contracts": "forge build",
+    "build:backend": "cd backend && pnpm build",
+    "build:indexer": "cd indexer && pnpm build",
+    "build:frontend": "cd frontend && pnpm build",
+    "test": "forge test",
+    "test:verbose": "forge test -vvv",
+    "deploy:testnet": "forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast",
+    "deploy:mainnet": "forge script script/Deploy.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "workspaces": [
+    "backend",
+    "indexer",
+    "frontend"
+  ]
+}
