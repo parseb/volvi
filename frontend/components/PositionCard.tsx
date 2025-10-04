@@ -18,15 +18,21 @@ export function PositionCard({ position, onSettle }: PositionCardProps) {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   const handleSettle = async () => {
-    try {
-      writeContract({
-        address: protocolAddress,
-        abi: optionsAbi,
-        functionName: 'settleOption',
-        args: [option.tokenId],
-      });
-    } catch (error) {
-      console.error('Failed to settle option:', error);
+    if (onSettle) {
+      // Use gasless settlement dialog
+      onSettle();
+    } else {
+      // Fallback to direct settlement (legacy)
+      try {
+        writeContract({
+          address: protocolAddress,
+          abi: optionsAbi,
+          functionName: 'settleOption',
+          args: [option.tokenId],
+        });
+      } catch (error) {
+        console.error('Failed to settle option:', error);
+      }
     }
   };
 
@@ -123,10 +129,10 @@ export function PositionCard({ position, onSettle }: PositionCardProps) {
               ? 'bg-gray-400 text-white cursor-not-allowed'
               : isSuccess
               ? 'bg-green-600 text-white'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'bg-green-600 text-white hover:bg-green-700'
           }`}
         >
-          {isPending || isConfirming ? 'Settling...' : isSuccess ? 'Settled!' : 'Settle Option'}
+          {isPending || isConfirming ? 'Settling...' : isSuccess ? 'Settled!' : '⚡ Settle (Gasless)'}
         </button>
       )}
 

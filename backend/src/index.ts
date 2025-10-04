@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
 import routes from './routes.js';
+import gaslessRoutes from './routes/gasless.js';
+import settlementRoutes from './routes/settlement.js';
 import { protocolContract } from './contract.js';
 import { storage } from './storage.js';
 
@@ -13,6 +15,8 @@ app.use(express.json());
 
 // Routes
 app.use('/api', routes);
+app.use('/api/gasless', gaslessRoutes);
+app.use('/api/settlement', settlementRoutes);
 
 // Event listeners for real-time updates
 function setupEventListeners() {

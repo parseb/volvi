@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { PositionCard } from '@/components/PositionCard';
+import SettlementDialog from '@/components/SettlementDialog';
 import { getPositions } from '@/lib/api';
 import type { Position } from '@/lib/types';
 
@@ -11,6 +12,11 @@ export default function Portfolio() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'active' | 'expired'>('all');
+  const [settlementPosition, setSettlementPosition] = useState<Position | null>(null);
+
+  // Configuration
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+  const CHAIN_ID = 8453; // Base mainnet
 
   useEffect(() => {
     if (!isConnected || !address) {
@@ -176,13 +182,40 @@ export default function Portfolio() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredPositions.map((position) => (
-                  <PositionCard key={position.option.tokenId.toString()} position={position} />
+                  <PositionCard
+                    key={position.option.tokenId.toString()}
+                    position={position}
+                    onSettle={() => setSettlementPosition(position)}
+                  />
                 ))}
               </div>
             )}
           </>
         )}
       </div>
+
+      {/* Settlement Dialog */}
+      {settlementPosition && (
+        <SettlementDialog
+          tokenId={settlementPosition.option.tokenId.toString()}
+          option={{
+            underlying: settlementPosition.option.underlying,
+            strikePrice: settlementPosition.option.strikePrice.toString(),
+            amount: settlementPosition.option.collateralLocked.toString(),
+            optionType: settlementPosition.option.isCall ? 1 : 0,
+            expiry: Number(settlementPosition.option.expiryTime),
+            payout: '0' // TODO: Calculate payout
+          }}
+          onClose={() => setSettlementPosition(null)}
+          onSuccess={(orderUid) => {
+            console.log('Settlement order submitted:', orderUid);
+            setSettlementPosition(null);
+            // Optionally: Show success notification, refresh positions
+          }}
+          backendUrl={BACKEND_URL}
+          chainId={CHAIN_ID}
+        />
+      )}
     </div>
   );
 }
