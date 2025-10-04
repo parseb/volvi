@@ -60,11 +60,16 @@ library UniswapV3Oracle {
      * @return confidence The confidence interval (10% for now)
      */
     function getPrice(address pool) internal view returns (uint256 price, uint256 confidence) {
-        try UniswapV3Oracle.getTwapPrice(pool, 1800) returns (uint256 _price) {
-            price = _price;
+        if (pool == address(0)) {
+            return (0, 0);
+        }
+
+        // Get price directly (no try-catch for internal library calls)
+        price = getTwapPrice(pool, 1800);
+
+        if (price > 0) {
             confidence = price / 10; // 10% confidence for Uniswap
-        } catch {
-            price = 0;
+        } else {
             confidence = 0;
         }
     }
