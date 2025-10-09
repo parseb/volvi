@@ -15,9 +15,13 @@ remappings = [
     "forge-std/=lib/forge-std/src/"
 ]
 
+# Allow script to write deployment info
+fs_permissions = [{ access = "read-write", path = "./" }]
+
 [rpc_endpoints]
 base = "${BASE_RPC_URL}"
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+fork = "${FORK_RPC_URL}"
 
 [etherscan]
 base = { key = "${BASESCAN_API_KEY}" }

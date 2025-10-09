@@ -20,16 +20,27 @@ export class ProtocolContract {
 
   constructor() {
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    this.contract = new ethers.Contract(
-      config.protocolAddress,
-      PROTOCOL_ABI,
-      this.provider
-    );
 
-    // Setup signer for broadcaster
-    if (config.broadcasterPrivateKey) {
-      this.signer = new ethers.Wallet(config.broadcasterPrivateKey, this.provider);
-      this.contract = this.contract.connect(this.signer) as ethers.Contract;
+    // Only initialize contract if address is configured
+    if (config.protocolAddress) {
+      this.contract = new ethers.Contract(
+        config.protocolAddress,
+        PROTOCOL_ABI,
+        this.provider
+      );
+
+      // Setup signer for broadcaster
+      if (config.broadcasterPrivateKey) {
+        this.signer = new ethers.Wallet(config.broadcasterPrivateKey, this.provider);
+        this.contract = this.contract.connect(this.signer) as ethers.Contract;
+      }
+    } else {
+      // Create a dummy contract to prevent errors
+      this.contract = new ethers.Contract(
+        ethers.ZeroAddress,
+        PROTOCOL_ABI,
+        this.provider
+      );
     }
   }
 

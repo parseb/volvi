@@ -4,26 +4,26 @@
   "private": true,
   "description": "Decentralized options protocol with signature-based orderbook",
   "scripts": {
-    "dev": "concurrently \"pnpm dev:backend\" \"pnpm dev:indexer\" \"pnpm dev:frontend\"",
-    "dev:backend": "cd backend && pnpm dev",
-    "dev:indexer": "cd indexer && pnpm dev",
-    "dev:frontend": "cd frontend && pnpm dev",
-    "build": "pnpm build:contracts && pnpm build:backend && pnpm build:indexer && pnpm build:frontend",
+    "start": "./scripts/start-dev.sh",
+    "start:all": "./scripts/start-all.sh",
+    "dev": "concurrently \"npm run fork\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "fork": "anvil --fork-url $BASE_RPC_URL --fork-block-number ${FORK_BLOCK_NUMBER:-latest} --chain-id 8453 --host 0.0.0.0",
+    "fork:deploy": "forge script script/DeployFork.s.sol --rpc-url http://127.0.0.1:8545 --broadcast",
+    "fork:fund": "./scripts/fund-test-accounts.sh",
+    "fork:setup": "npm run fork:deploy && npm run fork:fund",
+    "build": "npm run build:contracts && npm run build:backend && npm run build:frontend",
     "build:contracts": "forge build",
-    "build:backend": "cd backend && pnpm build",
-    "build:indexer": "cd indexer && pnpm build",
-    "build:frontend": "cd frontend && pnpm build",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
     "test": "forge test",
     "test:verbose": "forge test -vvv",
+    "test:fork": "forge test --fork-url $BASE_RPC_URL",
     "deploy:testnet": "forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast",
     "deploy:mainnet": "forge script script/Deploy.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
-  },
-  "workspaces": [
-    "backend",
-    "indexer",
-    "frontend"
-  ]
+  }
 }

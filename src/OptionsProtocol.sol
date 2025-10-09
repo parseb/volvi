@@ -24,7 +24,7 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
     bytes32 public constant BROADCASTER_ROLE = keccak256("BROADCASTER");
     bytes32 public constant ADMIN_ROLE = DEFAULT_ADMIN_ROLE;
 
-    bytes32 private constant OPTION_OFFER_TYPEHASH = keccak256(
+    bytes32 internal constant OPTION_OFFER_TYPEHASH = keccak256(
         "OptionOffer(address writer,address underlying,uint256 collateralAmount,address stablecoin,bool isCall,uint256 premiumPerDay,uint16 minDuration,uint16 maxDuration,uint256 minFillAmount,uint64 deadline,bytes32 configHash)"
     );
 
@@ -86,7 +86,7 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
     mapping(uint256 => ActiveOption) public options;
     mapping(address => bytes32) public defaultConfigForToken;
 
-    uint256 private _nextTokenId = 1;
+    uint256 internal _nextTokenId = 1;
     uint256 public protocolFeeBps = 10; // 0.1% = 10 basis points
     address public feeCollector;
 

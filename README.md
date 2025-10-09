@@ -1,23 +1,38 @@
 # Options Protocol
 
-A decentralized options protocol for ERC-20 tokens with signature-based orderbook, partial fills, and multi-chain support.
+Decentralized options protocol with signature-based orderbook and gasless transactions on Base.
+
+## Quick Start 🚀
+
+```bash
+npm start
+```
+
+That's it! Opens:
+- **Frontend:** http://localhost:3000
+- **Backend:** http://localhost:3001
+- **Fork:** http://127.0.0.1:8545
+
+**📖 Full guide:** [START.md](./START.md)
 
 ## Features
 
-- 📝 **EIP-712 Signature-based Orderbook** - Gas-efficient off-chain order matching
-- 🔄 **Partial Fills** - Fill any portion of an offer without nonces
-- 🎨 **ERC-721 Options** - Transferable option positions as NFTs
-- 💰 **Flexible Premiums** - Writers set premium/day, takers choose duration
-- 🔮 **Oracle Integration** - Pyth primary, Uniswap V3 fallback
-- 🌐 **Multi-chain Ready** - Initially deployed on Base
-- 🔐 **Multi-auth** - Wallet, email, and social login via Reown
+✅ **Gasless Transactions** - Users sign EIP-3009, backend pays gas
+✅ **Signature-based Orderbook** - Off-chain offers, on-chain settlement
+✅ **Partial Fills** - Take any amount from an offer
+✅ **Pyth Oracle** - Reliable pricing with Uniswap fallback
+✅ **$1 Flat Fee** - Simple pricing, covers gas costs
+✅ **Base Optimized** - Cheap transactions, fast settlement
+✅ **Multi-auth** - Wallet, passkey, email, and social login via Reown
 
 ## Architecture
 
 ```
 options-protocol/
-├── src/               # Solidity smart contracts
-├── backend/           # Express API + PostgreSQL
+├── src/                       # Solidity smart contracts
+│   ├── OptionsProtocol.sol
+│   └── OptionsProtocolGasless.sol
+├── backend/                   # Express API + PostgreSQL
 ├── indexer/           # Event indexer service
 ├── frontend/          # Next.js application
 └── test/              # Foundry tests

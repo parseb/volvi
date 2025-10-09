@@ -56,6 +56,7 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
 
     address public gasReimbursementVault;  // Vault for collecting gas reimbursements
     address public cowSettlement;          // CowSwap settlement contract address
+    uint256 public fee;                    // Fixed fee per option (e.g., $1 = 1e6 for USDC)
 
     mapping(uint256 => SettlementState) public settlementStates;
     mapping(uint256 => SettlementTerms) public settlementTerms;
@@ -91,6 +92,7 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
 
     event GasVaultUpdated(address indexed oldVault, address indexed newVault);
     event CowSettlementUpdated(address indexed oldContract, address indexed newContract);
+    event FeeUpdated(uint256 indexed oldFee, uint256 indexed newFee);
 
     // ============ Constructor ============
 
@@ -103,21 +105,20 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
     ) OptionsProtocol(_pyth, _swapRouter, _defaultStablecoin) {
         gasReimbursementVault = _gasVault;
         cowSettlement = _cowSettlement;
+        fee = 1e6; // Default $1 (assuming 6 decimals for USDC)
     }
 
     // ============ Gasless Take Option (EIP-3009) ============
 
     /**
-     * @notice Take option with gasless transaction using EIP-3009 authorizations
-     * @dev Taker signs two EIP-3009 authorizations:
-     *      1. Premium payment to writer
-     *      2. Gas reimbursement to backend vault
+     * @notice Take option with gasless transaction using EIP-3009 authorization
+     * @dev Taker signs single EIP-3009 authorization for premium + protocol fee
+     *      Payment is sent to contract which splits: premium to writer, fee to vault
      * @param offer The option offer
      * @param offerSignature Writer's EIP-712 signature
      * @param fillAmount Amount of collateral to fill
      * @param duration Option duration in days
-     * @param premiumAuth EIP-3009 authorization for premium payment
-     * @param gasAuth EIP-3009 authorization for gas reimbursement
+     * @param paymentAuth EIP-3009 authorization for total payment (premium + fee)
      * @return tokenId The minted option NFT ID
      */
     function takeOptionGasless(
@@ -125,10 +126,9 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
         bytes calldata offerSignature,
         uint256 fillAmount,
         uint16 duration,
-        EIP3009Authorization calldata premiumAuth,
-        EIP3009Authorization calldata gasAuth
+        EIP3009Authorization calldata paymentAuth
     ) external returns (uint256 tokenId) {
-        // 1. Verify offer signature and basic validations (reuse existing logic)
+        // 1. Verify offer signature and basic validations
         bytes32 offerHash = _hashOffer(offer);
         require(_verifySignature(offerHash, offer.writer, offerSignature), "Invalid signature");
         require(block.timestamp <= offer.deadline, "Offer expired");
@@ -139,40 +139,30 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
         uint256 filled = filledAmounts[offerHash];
         require(filled + fillAmount <= offer.collateralAmount, "Exceeds available");
 
-        // 3. Calculate premium
+        // 3. Calculate premium and total payment (premium + protocol fee)
         uint256 premium = (offer.premiumPerDay * duration * fillAmount) / offer.collateralAmount;
+        uint256 totalPayment = premium + fee;
 
-        // 4. Verify premium authorization matches calculated premium
-        require(premiumAuth.from == msg.sender, "Premium auth mismatch"); // Relayer check
-        require(premiumAuth.value == premium, "Premium amount mismatch");
+        // 4. Verify payment authorization matches total
+        require(paymentAuth.to == address(this), "Invalid recipient");
+        require(paymentAuth.value == totalPayment, "Payment amount mismatch");
 
-        // 5. Execute premium payment via EIP-3009
-        // Premium goes directly to writer
+        // 5. Execute single EIP-3009 payment to contract
         IERC3009(offer.stablecoin).receiveWithAuthorization(
-            premiumAuth.from,
-            offer.writer,  // Premium directly to writer
-            premiumAuth.value,
-            premiumAuth.validAfter,
-            premiumAuth.validBefore,
-            premiumAuth.nonce,
-            premiumAuth.v,
-            premiumAuth.r,
-            premiumAuth.s
+            paymentAuth.from,
+            address(this),  // Contract receives total payment
+            paymentAuth.value,
+            paymentAuth.validAfter,
+            paymentAuth.validBefore,
+            paymentAuth.nonce,
+            paymentAuth.v,
+            paymentAuth.r,
+            paymentAuth.s
         );
 
-        // 6. Collect gas reimbursement via EIP-3009
-        // Gas fee goes to backend vault
-        IERC3009(offer.stablecoin).receiveWithAuthorization(
-            gasAuth.from,
-            gasReimbursementVault,  // To backend vault
-            gasAuth.value,
-            gasAuth.validAfter,
-            gasAuth.validBefore,
-            gasAuth.nonce,
-            gasAuth.v,
-            gasAuth.r,
-            gasAuth.s
-        );
+        // 6. Distribute payments
+        IERC20(offer.stablecoin).safeTransfer(offer.writer, premium);
+        IERC20(offer.stablecoin).safeTransfer(gasReimbursementVault, fee);
 
         // 7. Pull collateral from writer (existing logic)
         IERC20(offer.underlying).safeTransferFrom(
@@ -186,7 +176,7 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
 
         // 9. Create active option (NFT minted to actual taker, not relayer)
         tokenId = _nextTokenId++;
-        _mint(premiumAuth.from, tokenId);  // Mint to taker (from EIP-3009)
+        _mint(paymentAuth.from, tokenId);  // Mint to taker (from EIP-3009)
 
         options[tokenId] = ActiveOption({
             tokenId: tokenId,
@@ -212,10 +202,10 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
         emit OptionTakenGasless(
             tokenId,
             offerHash,
-            premiumAuth.from,
+            paymentAuth.from,
             fillAmount,
             premium,
-            gasAuth.value
+            fee
         );
     }
 
@@ -234,7 +224,12 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
     ) external view override returns (bytes4) {
         // Decode signature: first 32 bytes = tokenId
         require(signature.length >= 32, "Invalid signature length");
-        uint256 tokenId = abi.decode(signature[:32], (uint256));
+
+        // Extract first 32 bytes manually
+        uint256 tokenId;
+        assembly {
+            tokenId := mload(add(signature, 32))
+        }
 
         ActiveOption memory option = options[tokenId];
         SettlementTerms memory terms = settlementTerms[tokenId];
@@ -416,6 +411,18 @@ contract OptionsProtocolGasless is OptionsProtocol, IERC1271 {
         address oldContract = cowSettlement;
         cowSettlement = newContract;
         emit CowSettlementUpdated(oldContract, newContract);
+    }
+
+    /**
+     * @notice Update protocol fee amount
+     * @param newFee New fee amount (e.g., 1e6 for $1 USDC)
+     */
+    function setFee(uint256 newFee) external onlyRole(ADMIN_ROLE) {
+        require(newFee > 0, "Fee must be positive");
+        require(newFee <= 10e6, "Fee too high"); // Max $10
+        uint256 oldFee = fee;
+        fee = newFee;
+        emit FeeUpdated(oldFee, newFee);
     }
 
     // ============ Internal Functions ============
