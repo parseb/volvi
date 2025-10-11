@@ -9,7 +9,7 @@
     "dev": "concurrently \"npm run fork\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
-    "fork": "anvil --fork-url $BASE_RPC_URL --fork-block-number ${FORK_BLOCK_NUMBER:-latest} --chain-id 8453 --host 0.0.0.0",
+    "fork": "./scripts/fork.sh",
     "fork:deploy": "forge script script/DeployFork.s.sol --rpc-url http://127.0.0.1:8545 --broadcast",
     "fork:fund": "./scripts/fund-test-accounts.sh",
     "fork:setup": "npm run fork:deploy && npm run fork:fund",

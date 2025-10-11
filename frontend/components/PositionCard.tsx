@@ -37,7 +37,7 @@ export function PositionCard({ position, onSettle }: PositionCardProps) {
   };
 
   const isExpired = option.expiryTime < BigInt(Math.floor(Date.now() / 1000));
-  const canSettle = isExpired && !option.settled;
+  const canSettle = !option.settled; // Taker can settle/close at any time
 
   const formatDate = (timestamp: bigint) => {
     return new Date(Number(timestamp) * 1000).toLocaleDateString();
@@ -129,10 +129,18 @@ export function PositionCard({ position, onSettle }: PositionCardProps) {
               ? 'bg-gray-400 text-white cursor-not-allowed'
               : isSuccess
               ? 'bg-green-600 text-white'
-              : 'bg-green-600 text-white hover:bg-green-700'
+              : isExpired
+              ? 'bg-orange-600 text-white hover:bg-orange-700'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
           }`}
         >
-          {isPending || isConfirming ? 'Settling...' : isSuccess ? 'Settled!' : '⚡ Settle (Gasless)'}
+          {isPending || isConfirming
+            ? 'Processing...'
+            : isSuccess
+            ? 'Settled!'
+            : isExpired
+            ? '⚡ Settle Expired Option'
+            : '⚡ Close Position (Settle)'}
         </button>
       )}
 

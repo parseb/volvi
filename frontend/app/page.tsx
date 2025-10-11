@@ -6,6 +6,7 @@ import { Orderbook } from '@/components/Orderbook';
 import GaslessTakeSidebar from '@/components/GaslessTakeSidebar';
 import { WriterSidebar } from '@/components/WriterSidebar';
 import TokenSelector from '@/components/TokenSelector';
+import { chainId } from '@/lib/config';
 import type { OrderbookOffer } from '@/lib/types';
 import type { Token } from '@/lib/cowswap-tokens';
 
@@ -21,7 +22,6 @@ export default function Home() {
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
   const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // USDC on Base
   const VAULT_ADDRESS = process.env.NEXT_PUBLIC_VAULT_ADDRESS || '0x0000000000000000000000000000000000000000';
-  const CHAIN_ID = 8453; // Base mainnet
 
   const handleTakeSuccess = (txHash: string, tokenId: string) => {
     console.log('Option taken successfully:', { txHash, tokenId });
@@ -43,10 +43,10 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-4">
               <a
-                href="/portfolio"
+                href="/dashboard"
                 className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
               >
-                Portfolio
+                Dashboard
               </a>
               <w3m-button />
             </div>
@@ -111,7 +111,7 @@ export default function Home() {
             backendUrl={BACKEND_URL}
             usdcAddress={USDC_ADDRESS}
             vaultAddress={VAULT_ADDRESS}
-            chainId={CHAIN_ID}
+            chainId={chainId}
           />
         ) : (
           <WriterSidebar />
@@ -121,7 +121,7 @@ export default function Home() {
       {/* Token Selector Modal */}
       {showTokenSelector && (
         <TokenSelector
-          chainId={CHAIN_ID}
+          chainId={chainId}
           selectedToken={selectedTokenInfo}
           onSelect={(token) => {
             setSelectedToken(token.address);

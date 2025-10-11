@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { storage } from './storage.js';
 import { protocolContract } from './contract.js';
 import { OptionOffer } from './types.js';
+import { getPythPrice } from './pyth.js';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.get('/orderbook/:token', async (req: Request, res: Response) => {
 
     const orderbook = storage.getOrderbook(
       token,
-      isCall === 'true',
+      isCall !== undefined ? isCall === 'true' : undefined,
       {
         minDuration: minDuration ? parseInt(minDuration as string) : undefined,
         maxDuration: maxDuration ? parseInt(maxDuration as string) : undefined,
@@ -35,14 +36,19 @@ router.get('/orderbook/:token', async (req: Request, res: Response) => {
 // Submit new offer (broadcaster only)
 router.post('/offers', async (req: Request, res: Response) => {
   try {
-    const offer: OptionOffer = req.body;
+    const { offer, signature } = req.body;
+
+    // Debug logging
+    console.log('Received offer submission:', JSON.stringify({ offer, signature }, null, 2));
 
     // Validate offer structure
-    if (!offer.writer || !offer.signature || !offer.underlying) {
+    if (!offer || !signature || !offer.writer || !offer.underlying) {
+      console.error('Validation failed:', { offer, signature, hasWriter: !!offer?.writer, hasUnderlying: !!offer?.underlying });
       return res.status(400).json({ error: 'Invalid offer structure' });
     }
 
     // Calculate offer hash
+    console.log('Calling getOfferHash with offer:', offer);
     const offerHash = await protocolContract.getOfferHash({
       writer: offer.writer,
       underlying: offer.underlying,
@@ -56,10 +62,12 @@ router.post('/offers', async (req: Request, res: Response) => {
       deadline: offer.deadline,
       configHash: offer.configHash
     });
+    console.log('Got offer hash:', offerHash);
 
     // Store in memory
     storage.addOffer({
       ...offer,
+      signature,
       offerHash
     });
 
@@ -102,15 +110,118 @@ router.get('/offers/:offerHash', (req: Request, res: Response) => {
   }
 });
 
+// Delete/cancel offer
+router.delete('/offers/:offerHash', (req: Request, res: Response) => {
+  try {
+    const { offerHash } = req.params;
+    const offer = storage.getOffer(offerHash);
+
+    if (!offer) {
+      return res.status(404).json({ error: 'Offer not found' });
+    }
+
+    // Remove offer from storage
+    storage.deleteOffer(offerHash);
+    console.log(`Offer ${offerHash} cancelled and removed from storage`);
+
+    res.json({ success: true, message: 'Offer cancelled successfully' });
+  } catch (error: any) {
+    console.error('Failed to cancel offer:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get user positions
-router.get('/positions/:address', (req: Request, res: Response) => {
+router.get('/positions/:address', async (req: Request, res: Response) => {
   try {
     const { address } = req.params;
-    const positions = storage.getActiveOptionsByTaker(address);
+    const activeOptions = storage.getActiveOptionsByTaker(address);
+
+    // Transform to Position format with nested option structure and calculate P&L
+    const positions = await Promise.all(activeOptions.map(async (option) => {
+      try {
+        // Fetch current price from Pyth oracle
+        const currentPriceStr = await getPythPrice(option.underlying);
+        const currentPrice = BigInt(currentPriceStr);
+        const strikePrice = BigInt(option.strikePrice);
+        const collateral = BigInt(option.collateralLocked);
+
+        // Calculate P&L based on option type
+        // For CALL: profit if current > strike
+        // For PUT: profit if strike > current
+        let pnl: bigint;
+
+        if (option.isCall) {
+          // Call option: profit = max(0, currentPrice - strikePrice) * collateral / strikePrice
+          if (currentPrice > strikePrice) {
+            const priceDiff = currentPrice - strikePrice;
+            // Convert to USDC (6 decimals): (priceDiff * collateral) / (strikePrice * 10^20)
+            // strikePrice is in 8 decimals, collateral is in 18 decimals
+            // We want result in 6 decimals (USDC)
+            pnl = (priceDiff * collateral) / (strikePrice * BigInt(1e12));
+          } else {
+            pnl = 0n; // Out of the money
+          }
+        } else {
+          // Put option: profit = max(0, strikePrice - currentPrice) * collateral / strikePrice
+          if (strikePrice > currentPrice) {
+            const priceDiff = strikePrice - currentPrice;
+            pnl = (priceDiff * collateral) / (strikePrice * BigInt(1e12));
+          } else {
+            pnl = 0n; // Out of the money
+          }
+        }
+
+        return {
+          option,
+          currentPrice: currentPriceStr,
+          pnl: pnl.toString()
+        };
+      } catch (error) {
+        console.error(`Failed to calculate P&L for option ${option.tokenId}:`, error);
+        return {
+          option,
+          currentPrice: undefined,
+          pnl: undefined
+        };
+      }
+    }));
 
     res.json({
       positions,
       count: positions.length
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get user's written offers
+router.get('/offers/writer/:address', (req: Request, res: Response) => {
+  try {
+    const { address } = req.params;
+    const allOffers = storage.getAllOffers();
+
+    // Filter offers by writer address (case-insensitive)
+    const writerOffers = allOffers.filter(
+      (offer) => offer.writer.toLowerCase() === address.toLowerCase()
+    );
+
+    // Add filled/remaining amounts
+    const enrichedOffers = writerOffers.map((offer) => {
+      const filledAmount = storage.getFilledAmount(offer.offerHash);
+      const remainingAmount = (BigInt(offer.collateralAmount) - BigInt(filledAmount)).toString();
+
+      return {
+        ...offer,
+        filledAmount,
+        remainingAmount
+      };
+    });
+
+    res.json({
+      offers: enrichedOffers,
+      count: enrichedOffers.length
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -179,6 +290,80 @@ router.get('/offers', (req: Request, res: Response) => {
     const offers = storage.getAllOffers();
     res.json({ offers, count: offers.length });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Gasless take option endpoint (simplified - no actual EIP-3009 validation yet)
+router.post('/gasless/take-gasless', async (req: Request, res: Response) => {
+  try {
+    const { offerHash, taker, fillAmount, duration, premiumAuth, gasAuth } = req.body;
+
+    console.log('Received gasless take request:', JSON.stringify(req.body, null, 2));
+
+    // Validate input
+    if (!offerHash || !taker || !fillAmount || !duration || !premiumAuth || !gasAuth) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Get the offer from storage
+    const offer = storage.getOffer(offerHash);
+    if (!offer) {
+      return res.status(404).json({ error: 'Offer not found' });
+    }
+
+    // Check if offer has enough remaining
+    const filledAmount = storage.getFilledAmount(offerHash);
+    const remainingAmount = BigInt(offer.collateralAmount) - BigInt(filledAmount);
+    if (remainingAmount < BigInt(fillAmount)) {
+      return res.status(400).json({ error: 'Insufficient remaining amount in offer' });
+    }
+
+    // TODO: Validate EIP-3009 authorizations (premiumAuth and gasAuth)
+    // This would require checking signatures, nonces, and validity periods
+
+    // TODO: Submit transaction to blockchain via relayer
+    // For now, just simulate success and update storage
+
+    // Update filled amount
+    storage.updateFilledAmount(offerHash, fillAmount);
+
+    // Generate mock tokenId (in real implementation, this comes from blockchain)
+    const tokenId = Math.floor(Math.random() * 1000000).toString();
+
+    // Store the active option
+    const currentTime = Math.floor(Date.now() / 1000);
+    const expiryTime = currentTime + duration * 86400;
+
+    // Fetch current price from Pyth oracle to set as strike price
+    const strikePrice = await getPythPrice(offer.underlying);
+    console.log(`Strike price set from Pyth oracle: $${strikePrice} for ${offer.underlying}`);
+
+    storage.addActiveOption({
+      tokenId,
+      offerHash: offerHash,
+      writer: offer.writer,
+      taker: taker,
+      underlying: offer.underlying,
+      collateralLocked: fillAmount,
+      isCall: offer.isCall,
+      strikePrice: strikePrice,
+      startTime: currentTime,
+      expiryTime: expiryTime,
+      settled: false,
+      configHash: offer.configHash
+    });
+
+    console.log(`Gasless take successful: tokenId=${tokenId}, filled=${fillAmount}`);
+
+    res.json({
+      success: true,
+      txHash: '0x' + '0'.repeat(64), // Mock transaction hash
+      tokenId,
+      message: 'Option taken successfully (simulated - blockchain integration pending)'
+    });
+  } catch (error: any) {
+    console.error('Failed to process gasless take:', error);
     res.status(500).json({ error: error.message });
   }
 });

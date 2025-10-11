@@ -108,22 +108,22 @@ export function Orderbook({ token, onSelectOffer }: OrderbookProps) {
                   <td className="p-3">
                     <span
                       className={`px-2 py-1 rounded text-sm ${
-                        orderOffer.offer.isCall
+                        orderOffer.isCall
                           ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                           : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                       }`}
                     >
-                      {orderOffer.offer.isCall ? 'CALL' : 'PUT'}
+                      {orderOffer.isCall ? 'CALL' : 'PUT'}
                     </span>
                   </td>
                   <td className="text-right p-3">{formatAmount(orderOffer.remainingAmount)}</td>
-                  <td className="text-right p-3">{formatPremium(orderOffer.offer.premiumPerDay)} USDC</td>
+                  <td className="text-right p-3">{formatPremium(orderOffer.premiumPerDay)} USDC</td>
                   <td className="text-right p-3">
-                    {orderOffer.offer.minDuration}-{orderOffer.offer.maxDuration}d
+                    {orderOffer.minDuration}-{orderOffer.maxDuration}d
                   </td>
                   <td className="text-right p-3 font-semibold">{formatPremium(orderOffer.totalPremium)} USDC</td>
                   <td className="text-right p-3">
-                    {((Number(orderOffer.filledAmount) / Number(orderOffer.offer.collateralAmount)) * 100).toFixed(1)}%
+                    {((Number(orderOffer.filledAmount) / Number(orderOffer.collateralAmount)) * 100).toFixed(1)}%
                   </td>
                   <td className="text-center p-3">
                     <button

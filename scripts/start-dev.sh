@@ -35,7 +35,8 @@ sleep 2
 # Step 2: Start Anvil fork
 echo ""
 echo "🍴 Starting Anvil Base fork..."
-anvil --fork-url "$BASE_RPC_URL" --chain-id 8453 --host 0.0.0.0 --port 8545 > /tmp/anvil.log 2>&1 &
+MNEMONIC="test test test test test test test test test test test junk"
+anvil --fork-url "$BASE_RPC_URL" --chain-id 123999 --host 0.0.0.0 --port 8545 --mnemonic "$MNEMONIC" > /tmp/anvil.log 2>&1 &
 ANVIL_PID=$!
 
 # Wait for anvil to be ready
@@ -119,7 +120,7 @@ echo "===================================================="
 echo ""
 echo "📍 Services:"
 echo "   Anvil Fork: http://127.0.0.1:8545"
-echo "   Chain ID: 8453 (Base Fork)"
+echo "   Chain ID: 123999 (Base Fork)"
 echo ""
 echo "📝 Contract:"
 echo "   Protocol: $PROTOCOL_ADDRESS"
@@ -133,12 +134,14 @@ echo ""
 echo "🔑 Import to MetaMask:"
 echo "   Network Name: Base Fork"
 echo "   RPC URL: http://127.0.0.1:8545"
-echo "   Chain ID: 8453"
+echo "   Chain ID: 123999"
 echo "   Currency: ETH"
 echo ""
-echo "   Account #1 (Deployer): 0xac097...f2ff80"
-echo "   Account #2 (Writer):   0x59c69...8690d"
-echo "   Account #3 (Taker):    0x5de41...ab365a"
+echo "   Seed Phrase: test test test test test test test test test test test junk"
+echo ""
+echo "   Account #0 (Deployer): 0xf39Fd...92266"
+echo "   Account #1 (Writer):   0x70997...c79C8"
+echo "   Account #2 (Taker):    0x3C44C...293BC"
 echo ""
 echo "📂 Environment loaded from .env.local"
 echo ""

@@ -79,12 +79,16 @@ class InMemoryStorage {
   }
 
   // Orderbook utilities
-  getOrderbook(underlying: string, isCall: boolean, filters?: {
+  getOrderbook(underlying: string, isCall?: boolean, filters?: {
     minDuration?: number;
     maxDuration?: number;
     minSize?: string;
   }): OrderbookEntry[] {
-    let offers = this.getOffersByToken(underlying, isCall);
+    let offers = isCall !== undefined
+      ? this.getOffersByToken(underlying, isCall)
+      : Array.from(this.offers.values()).filter(
+          (offer) => offer.underlying.toLowerCase() === underlying.toLowerCase()
+        );
 
     // Apply filters
     if (filters) {
@@ -114,7 +118,7 @@ class InMemoryStorage {
         remainingAmount,
         filledAmount,
         totalPremium,
-        isValid: BigInt(remainingAmount) > 0 && offer.deadline > Math.floor(Date.now() / 1000)
+        isValid: BigInt(remainingAmount) > 0 && Number(offer.deadline) > Math.floor(Date.now() / 1000)
       };
     }).filter(entry => entry !== null) as OrderbookEntry[];
 
