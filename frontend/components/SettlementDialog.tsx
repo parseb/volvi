@@ -43,13 +43,15 @@ export default function SettlementDialog({
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
 
-  const [step, setStep] = useState<'initiate' | 'approve' | 'submit'>('initiate');
+  const [step, setStep] = useState<'initiate' | 'approve' | 'submit' | 'matching' | 'executing'>('initiate');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [minBuyAmount, setMinBuyAmount] = useState('');
   const [settlementOrder, setSettlementOrder] = useState<SettlementOrder | null>(null);
   const [settlementConditionsHash, setSettlementConditionsHash] = useState<string>('');
   const [eip1271Signature, setEip1271Signature] = useState<string>('');
+  const [orderUid, setOrderUid] = useState<string>('');
+  const [matchingStatus, setMatchingStatus] = useState<string>('Waiting for CoW batch auction...');
 
   const handleInitiate = async () => {
     try {
@@ -183,12 +185,47 @@ export default function SettlementDialog({
       const result = await response.json();
 
       console.log('Settlement submitted:', result);
-      onSuccess(result.orderUid);
+      setOrderUid(result.orderUid);
+      setStep('matching');
+
+      // Start polling for order status
+      pollOrderStatus(result.orderUid);
     } catch (err) {
       console.error('Failed to submit settlement:', err);
       setError(err instanceof Error ? err.message : 'Failed to submit settlement');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const pollOrderStatus = async (uid: string) => {
+    try {
+      const response = await fetch(`https://api.cow.fi/sepolia/api/v1/orders/${uid}`);
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch order status');
+      }
+
+      const orderData = await response.json();
+      const status = orderData.status;
+
+      if (status === 'open') {
+        setMatchingStatus('Order submitted to CoW Protocol. Waiting for batch auction match...');
+        setTimeout(() => pollOrderStatus(uid), 5000);
+      } else if (status === 'fulfilled') {
+        setMatchingStatus('Settlement executed successfully!');
+        setStep('executing');
+        setTimeout(() => onSuccess(uid), 2000);
+      } else if (status === 'cancelled' || status === 'expired') {
+        setError(`Order ${status}. Please try again.`);
+      } else {
+        // Continue polling for other statuses
+        setTimeout(() => pollOrderStatus(uid), 5000);
+      }
+    } catch (err) {
+      console.error('Failed to poll order status:', err);
+      // Continue polling even on error
+      setTimeout(() => pollOrderStatus(uid), 5000);
     }
   };
 
@@ -218,35 +255,88 @@ export default function SettlementDialog({
 
           {/* Settlement Progress */}
           <div className="space-y-2">
-            <div className={`flex items-center space-x-2 ${step === 'initiate' ? 'text-blue-400' : 'text-green-400'}`}>
+            <div className={`flex items-center space-x-2 ${
+              step === 'initiate' ? 'text-blue-400' : 'text-green-400'
+            }`}>
               <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center">
                 {step !== 'initiate' ? '✓' : '1'}
               </div>
               <span>Initiate Settlement</span>
             </div>
-            <div className={`flex items-center space-x-2 ${step === 'approve' ? 'text-blue-400' : step === 'submit' ? 'text-green-400' : 'text-gray-500'}`}>
+            <div className={`flex items-center space-x-2 ${
+              step === 'approve' ? 'text-blue-400' :
+              ['submit', 'matching', 'executing'].includes(step) ? 'text-green-400' : 'text-gray-500'
+            }`}>
               <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center">
-                {step === 'submit' ? '✓' : '2'}
+                {['submit', 'matching', 'executing'].includes(step) ? '✓' : '2'}
               </div>
               <span>Approve Settlement</span>
             </div>
-            <div className={`flex items-center space-x-2 ${step === 'submit' ? 'text-blue-400' : 'text-gray-500'}`}>
+            <div className={`flex items-center space-x-2 ${
+              step === 'submit' ? 'text-blue-400' :
+              ['matching', 'executing'].includes(step) ? 'text-green-400' : 'text-gray-500'
+            }`}>
               <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center">
-                3
+                {['matching', 'executing'].includes(step) ? '✓' : '3'}
               </div>
-              <span>Submit to CowSwap</span>
+              <span>Submit to CoW Protocol</span>
+            </div>
+            <div className={`flex items-center space-x-2 ${
+              step === 'matching' ? 'text-yellow-400 animate-pulse' :
+              step === 'executing' ? 'text-green-400' : 'text-gray-500'
+            }`}>
+              <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center">
+                {step === 'executing' ? '✓' : step === 'matching' ? '⏳' : '4'}
+              </div>
+              <span>Waiting for CoW Batch Auction</span>
+            </div>
+            <div className={`flex items-center space-x-2 ${
+              step === 'executing' ? 'text-green-400' : 'text-gray-500'
+            }`}>
+              <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center">
+                {step === 'executing' ? '✓' : '5'}
+              </div>
+              <span>Settlement Executed</span>
             </div>
           </div>
 
           {/* Settlement Order Details */}
           {settlementOrder && (
             <div className="bg-gray-800 p-4 rounded">
-              <h3 className="font-semibold mb-2">Settlement Order</h3>
+              <h3 className="font-semibold mb-2">
+                {step === 'matching' ? 'CoW Swap Matchmaking' : 'Settlement Order'}
+              </h3>
               <div className="text-sm space-y-1 text-gray-300">
-                <div>Sell: {ethers.formatUnits(settlementOrder.sellAmount, 18)} tokens</div>
-                <div>Buy: {ethers.formatUnits(settlementOrder.buyAmount, 6)} USDC (min)</div>
-                <div>Valid Until: {new Date(settlementOrder.validTo * 1000).toLocaleString()}</div>
+                <div className="flex justify-between">
+                  <span>Input (Selling):</span>
+                  <span className="font-mono">{ethers.formatUnits(settlementOrder.sellAmount, 18)} {option.underlying.slice(0, 6)}...</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Expected Output:</span>
+                  <span className="font-mono text-green-400">{ethers.formatUnits(settlementOrder.buyAmount, 6)} USDC (min)</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>Valid Until:</span>
+                  <span>{new Date(settlementOrder.validTo * 1000).toLocaleString()}</span>
+                </div>
               </div>
+              {step === 'matching' && (
+                <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-yellow-400">
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin">⏳</div>
+                    <span>{matchingStatus}</span>
+                  </div>
+                  <div className="mt-2 text-gray-400">
+                    CoW Protocol batches orders every ~30 seconds. Your settlement will execute when a solver finds the best price.
+                  </div>
+                </div>
+              )}
+              {orderUid && (
+                <div className="mt-2 pt-2 border-t border-gray-700 text-xs">
+                  <div className="text-gray-400">Order UID:</div>
+                  <div className="font-mono text-gray-500 break-all">{orderUid}</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -277,8 +367,26 @@ export default function SettlementDialog({
               disabled={loading}
               className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded"
             >
-              {loading ? 'Submitting...' : 'Submit to CowSwap'}
+              {loading ? 'Submitting...' : 'Submit to CoW Protocol'}
             </button>
+          )}
+
+          {step === 'matching' && (
+            <div className="bg-yellow-900 border border-yellow-700 p-4 rounded text-center">
+              <div className="text-yellow-400 font-semibold mb-2">⏳ Waiting for Batch Auction</div>
+              <div className="text-sm text-gray-300">
+                Your order has been submitted to CoW Protocol. Settlement will execute automatically when matched.
+              </div>
+            </div>
+          )}
+
+          {step === 'executing' && (
+            <div className="bg-green-900 border border-green-700 p-4 rounded text-center">
+              <div className="text-green-400 font-semibold mb-2">✅ Settlement Complete!</div>
+              <div className="text-sm text-gray-300">
+                Your option has been settled successfully via CoW Protocol.
+              </div>
+            </div>
           )}
 
           {/* Error */}

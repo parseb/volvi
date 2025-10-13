@@ -4,13 +4,14 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "../src/OptionsProtocolGasless.sol";
 import "../test/mocks/MockERC20.sol";
+import "../test/mocks/MockERC20WithEIP3009.sol";
 import "../test/mocks/MockPyth.sol";
 import "../test/mocks/MockSwapRouter.sol";
 
 contract OptionsProtocolGasslessTest is Test {
     OptionsProtocolGasless public protocol;
     MockERC20 public weth;
-    MockERC20 public usdc;
+    MockERC20WithEIP3009 public usdc;
     MockPyth public pyth;
     MockSwapRouter public swapRouter;
 
@@ -23,10 +24,12 @@ contract OptionsProtocolGasslessTest is Test {
     uint256 public writerPrivateKey = 0x1234;
     uint256 public takerPrivateKey = 0x5678;
 
+    bytes32 public wethConfigHash;
+
     function setUp() public {
         // Deploy mocks
         weth = new MockERC20("Wrapped Ether", "WETH", 18);
-        usdc = new MockERC20("USD Coin", "USDC", 6);
+        usdc = new MockERC20WithEIP3009("USD Coin", "USDC", 6);
         pyth = new MockPyth();
         swapRouter = new MockSwapRouter();
 
@@ -52,6 +55,20 @@ contract OptionsProtocolGasslessTest is Test {
         // Approve protocol
         vm.prank(writer);
         weth.approve(address(protocol), type(uint256).max);
+
+        // Set up token configuration for WETH
+        wethConfigHash = protocol.setTokenConfig(
+            address(weth),           // token
+            address(usdc),           // stablecoin
+            0.001 ether,             // minUnit
+            address(swapRouter),     // swapVenue
+            3000,                    // poolFee (0.3%)
+            bytes32(uint256(1)),     // pythPriceFeedId (mock)
+            address(0),              // uniswapPriceFallback
+            address(0),              // preHook
+            address(0),              // postHook
+            address(0)               // settlementHook
+        );
     }
 
     function testTakeOptionGasless() public {
@@ -67,41 +84,30 @@ contract OptionsProtocolGasslessTest is Test {
             maxDuration: 365,
             minFillAmount: 0.1 ether,
             deadline: uint64(block.timestamp + 30 days),
-            configHash: bytes32(0)
+            configHash: wethConfigHash
         });
 
         // 2. Writer signs offer
         bytes memory offerSignature = _signOffer(offer, writerPrivateKey);
 
-        // 3. Calculate premium (7 days * 10 USDC = 70 USDC)
+        // 3. Calculate premium (7 days * 10 USDC = 70 USDC) + protocol fee
         uint256 fillAmount = 1 ether;
         uint16 duration = 7;
         uint256 premium = (offer.premiumPerDay * duration * fillAmount) / offer.collateralAmount;
         assertEq(premium, 70e6, "Premium calculation");
+        uint256 totalPayment = premium + protocol.fee(); // premium + fee
 
-        // 4. Estimate gas cost (simulated as $0.02)
-        uint256 gasCost = 0.02e6; // 0.02 USDC
-
-        // 5. Taker creates EIP-3009 authorizations
+        // 4. Taker creates EIP-3009 authorization for total payment (premium + fee) to contract
         OptionsProtocolGasless.EIP3009Authorization memory premiumAuth = _createEIP3009Auth(
             taker,
-            writer,
-            premium,
-            block.timestamp - 60,
+            address(protocol), // Payment goes to contract which distributes it
+            totalPayment,
+            0, // validAfter (0 = valid immediately)
             block.timestamp + 3600,
             takerPrivateKey
         );
 
-        OptionsProtocolGasless.EIP3009Authorization memory gasAuth = _createEIP3009Auth(
-            taker,
-            gasVault,
-            gasCost,
-            block.timestamp - 60,
-            block.timestamp + 3600,
-            takerPrivateKey
-        );
-
-        // 6. Take option gaslessly (called by relayer, but mints to taker)
+        // 5. Take option gaslessly (called by relayer, but mints to taker)
         uint256 takerUSDCBefore = usdc.balanceOf(taker);
         uint256 writerUSDCBefore = usdc.balanceOf(writer);
         uint256 vaultUSDCBefore = usdc.balanceOf(gasVault);
@@ -111,26 +117,37 @@ contract OptionsProtocolGasslessTest is Test {
             offerSignature,
             fillAmount,
             duration,
-            premiumAuth,
-            gasAuth
+            premiumAuth
         );
 
-        // 7. Verify results
+        // 6. Verify results
         assertEq(protocol.ownerOf(tokenId), taker, "NFT minted to taker");
         assertEq(usdc.balanceOf(writer), writerUSDCBefore + premium, "Writer received premium");
-        assertEq(usdc.balanceOf(gasVault), vaultUSDCBefore + gasCost, "Vault received gas fee");
+        assertEq(usdc.balanceOf(gasVault), vaultUSDCBefore + protocol.fee(), "Vault received fee");
         assertEq(
             usdc.balanceOf(taker),
-            takerUSDCBefore - premium - gasCost,
-            "Taker paid premium + gas"
+            takerUSDCBefore - totalPayment,
+            "Taker paid premium + fee"
         );
 
-        // 8. Verify option details
-        OptionsProtocol.ActiveOption memory activeOption = protocol.getOption(tokenId);
-        assertEq(activeOption.writer, writer, "Option writer");
-        assertEq(activeOption.collateralLocked, fillAmount, "Collateral locked");
-        assertTrue(activeOption.isCall, "Is call option");
-        assertFalse(activeOption.settled, "Not settled");
+        // 7. Verify option details
+        (
+            ,
+            address optionWriter,
+            ,
+            uint256 collateralLocked,
+            bool isCall,
+            ,
+            ,
+            ,
+            bool settled,
+            ,
+
+        ) = protocol.options(tokenId);
+        assertEq(optionWriter, writer, "Option writer");
+        assertEq(collateralLocked, fillAmount, "Collateral locked");
+        assertTrue(isCall, "Is call option");
+        assertFalse(settled, "Not settled");
     }
 
     function testGaslessCostComparison() public view {
@@ -157,14 +174,14 @@ contract OptionsProtocolGasslessTest is Test {
         bytes32 cowOrderHash = keccak256("test-order");
         uint256 minBuyAmount = 2000e6; // $2000 min
         uint64 validTo = uint64(block.timestamp + 1 hours);
-        bytes32 appData = bytes32(0);
+        bytes32 cowAppData = bytes32(0);
 
         protocol.initiateSettlement(
             tokenId,
             cowOrderHash,
             minBuyAmount,
             validTo,
-            appData
+            cowAppData
         );
 
         // 4. Verify settlement state
@@ -174,8 +191,9 @@ contract OptionsProtocolGasslessTest is Test {
             "In settlement state"
         );
 
-        (bytes32 storedHash,,,bool approved) = protocol.settlementTerms(tokenId);
+        (bytes32 storedHash, uint256 minBuy, uint64 valid, bytes32 appData, bool approved) = protocol.settlementTerms(tokenId);
         assertEq(storedHash, cowOrderHash, "Order hash stored");
+        assertEq(minBuy, minBuyAmount, "Min buy amount stored");
         assertFalse(approved, "Not yet approved");
     }
 
@@ -203,7 +221,7 @@ contract OptionsProtocolGasslessTest is Test {
         protocol.approveSettlement(tokenId, approvalSignature);
 
         // 3. Verify approval
-        (,,,bool approved) = protocol.settlementTerms(tokenId);
+        (, , , , bool approved) = protocol.settlementTerms(tokenId);
         assertTrue(approved, "Settlement approved");
     }
 
@@ -261,6 +279,10 @@ contract OptionsProtocolGasslessTest is Test {
         uint256 proceeds = 2100e6; // $2100 received
         usdc.mint(address(protocol), proceeds);
 
+        // Track balances before settlement
+        uint256 takerBalanceBefore = usdc.balanceOf(taker);
+        uint256 feeCollectorBalanceBefore = usdc.balanceOf(feeCollector);
+
         // 3. Call post-settlement hook (as CowSwap would)
         vm.prank(cowSettlement);
         protocol.postSettlementHook(tokenId, proceeds);
@@ -269,12 +291,12 @@ contract OptionsProtocolGasslessTest is Test {
         uint256 protocolFee = (proceeds * 10) / 10000; // 0.1%
         uint256 netProceeds = proceeds - protocolFee;
 
-        assertEq(usdc.balanceOf(taker), netProceeds, "Taker received proceeds");
-        assertEq(usdc.balanceOf(feeCollector), protocolFee, "Fee collector received fee");
+        assertEq(usdc.balanceOf(taker), takerBalanceBefore + netProceeds, "Taker received proceeds");
+        assertEq(usdc.balanceOf(feeCollector), feeCollectorBalanceBefore + protocolFee, "Fee collector received fee");
 
         // 5. Verify option settled
-        OptionsProtocol.ActiveOption memory option = protocol.getOption(tokenId);
-        assertTrue(option.settled, "Option marked as settled");
+        (, , , , , , , , bool settled, , ) = protocol.options(tokenId);
+        assertTrue(settled, "Option marked as settled");
     }
 
     // ============ Helper Functions ============
@@ -291,30 +313,24 @@ contract OptionsProtocolGasslessTest is Test {
             maxDuration: 365,
             minFillAmount: 0.1 ether,
             deadline: uint64(block.timestamp + 30 days),
-            configHash: bytes32(0)
+            configHash: wethConfigHash
         });
 
         bytes memory offerSignature = _signOffer(offer, writerPrivateKey);
 
+        uint256 premium = 70e6; // 7 days * 10 USDC
+        uint256 totalPayment = premium + protocol.fee();
+
         OptionsProtocolGasless.EIP3009Authorization memory premiumAuth = _createEIP3009Auth(
             taker,
-            writer,
-            70e6, // 7 days * 10 USDC
-            block.timestamp - 60,
+            address(protocol), // Payment goes to contract
+            totalPayment,
+            0, // validAfter
             block.timestamp + 3600,
             takerPrivateKey
         );
 
-        OptionsProtocolGasless.EIP3009Authorization memory gasAuth = _createEIP3009Auth(
-            taker,
-            gasVault,
-            0.02e6,
-            block.timestamp - 60,
-            block.timestamp + 3600,
-            takerPrivateKey
-        );
-
-        return protocol.takeOptionGasless(offer, offerSignature, 1 ether, 7, premiumAuth, gasAuth);
+        return protocol.takeOptionGasless(offer, offerSignature, 1 ether, 7, premiumAuth);
     }
 
     function _signOffer(
@@ -336,9 +352,28 @@ contract OptionsProtocolGasslessTest is Test {
             offer.configHash
         ));
 
+        // EIP712 domain separator is computed from eip712Domain()
+        (
+            ,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            ,
+
+        ) = protocol.eip712Domain();
+
+        bytes32 domainSeparator = keccak256(abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes(name)),
+            keccak256(bytes(version)),
+            chainId,
+            verifyingContract
+        ));
+
         bytes32 digest = keccak256(abi.encodePacked(
             "\x19\x01",
-            protocol.DOMAIN_SEPARATOR(),
+            domainSeparator,
             structHash
         ));
 
@@ -367,9 +402,28 @@ contract OptionsProtocolGasslessTest is Test {
             nonce
         ));
 
+        // Get USDC domain separator
+        (
+            ,
+            string memory usdcName,
+            string memory usdcVersion,
+            uint256 usdcChainId,
+            address usdcVerifyingContract,
+            ,
+
+        ) = usdc.eip712Domain();
+
+        bytes32 usdcDomainSeparator = keccak256(abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes(usdcName)),
+            keccak256(bytes(usdcVersion)),
+            usdcChainId,
+            usdcVerifyingContract
+        ));
+
         bytes32 digest = keccak256(abi.encodePacked(
             "\x19\x01",
-            usdc.DOMAIN_SEPARATOR(),
+            usdcDomainSeparator,
             structHash
         ));
 
@@ -403,9 +457,28 @@ contract OptionsProtocolGasslessTest is Test {
             validTo
         ));
 
+        // EIP712 domain separator is computed from eip712Domain()
+        (
+            ,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            ,
+
+        ) = protocol.eip712Domain();
+
+        bytes32 domainSeparator = keccak256(abi.encode(
+            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+            keccak256(bytes(name)),
+            keccak256(bytes(version)),
+            chainId,
+            verifyingContract
+        ));
+
         bytes32 digest = keccak256(abi.encodePacked(
             "\x19\x01",
-            protocol.DOMAIN_SEPARATOR(),
+            domainSeparator,
             structHash
         ));
 

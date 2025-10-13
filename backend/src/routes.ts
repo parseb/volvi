@@ -3,6 +3,14 @@ import { storage } from './storage.js';
 import { protocolContract } from './contract.js';
 import { OptionOffer } from './types.js';
 import { getPythPrice } from './pyth.js';
+import {
+  createCowOrder,
+  hashCowOrder,
+  createAppData,
+  createEIP1271Signature,
+  submitCowOrder,
+} from './cow.js';
+import { ethers } from 'ethers';
 
 const router = Router();
 
@@ -364,6 +372,228 @@ router.post('/gasless/take-gasless', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Failed to process gasless take:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============ CoW Protocol Settlement Endpoints ============
+
+/**
+ * POST /api/settlement/initiate
+ * Initiate settlement by creating CoW order and calling contract
+ */
+router.post('/settlement/initiate', async (req: Request, res: Response) => {
+  try {
+    const { tokenId, minBuyAmount } = req.body;
+
+    console.log('Initiating settlement for tokenId:', tokenId);
+
+    // 1. Get option from storage
+    const option = storage.getActiveOption(tokenId);
+    if (!option) {
+      return res.status(404).json({ error: 'Option not found' });
+    }
+
+    // 2. Validate option is expired or can be closed
+    const now = Math.floor(Date.now() / 1000);
+    if (now < option.expiryTime) {
+      console.log('Option not expired yet, allowing early close');
+    }
+
+    // 3. Get current price from Pyth
+    const currentPrice = await getPythPrice(option.underlying);
+    console.log(`Current price for ${option.underlying}: $${Number(currentPrice) / 1e8}`);
+
+    // 4. Get addresses from environment
+    const PROTOCOL_ADDRESS = process.env.PROTOCOL_ADDRESS || protocolContract.target as string;
+    const USDC_ADDRESS = process.env.USDC_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e'; // Base Sepolia USDC
+    const chainId = parseInt(process.env.CHAIN_ID || '84532'); // Base Sepolia
+
+    // 5. Create CoW order
+    const validTo = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+    const appData = createAppData(tokenId, PROTOCOL_ADDRESS);
+
+    const order = createCowOrder({
+      sellToken: option.underlying,
+      buyToken: USDC_ADDRESS,
+      receiver: PROTOCOL_ADDRESS, // Protocol receives proceeds
+      sellAmount: option.collateralLocked,
+      buyAmount: minBuyAmount,
+      validTo,
+      appData,
+    });
+
+    console.log('Created CoW order:', order);
+
+    // 6. Hash the order
+    const orderHash = hashCowOrder(order, chainId);
+    console.log('Order hash:', orderHash);
+
+    // 7. Call contract initiateSettlement
+    // Note: In production, this should use a proper wallet/signer
+    // For now, we'll skip the actual contract call and simulate
+    console.log('Would call contract.initiateSettlement with:',{
+      tokenId,
+      orderHash,
+      minBuyAmount,
+      validTo,
+      appData
+    });
+
+    // 8. Create settlement conditions hash for taker to sign
+    const settlementConditionsHash = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['uint256', 'bytes32', 'uint256', 'uint32'],
+        [tokenId, orderHash, minBuyAmount, validTo]
+      )
+    );
+
+    console.log('Settlement conditions hash:', settlementConditionsHash);
+
+    // 9. Store in memory
+    storage.addSettlement({
+      tokenId,
+      order,
+      orderHash,
+      settlementConditionsHash,
+      status: 'initiated',
+      createdAt: Date.now(),
+    });
+
+    res.json({
+      order,
+      settlementConditionsHash,
+      orderHash,
+    });
+
+  } catch (error: any) {
+    console.error('Settlement initiation failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/settlement/approve
+ * Store taker's approval signature and call contract
+ */
+router.post('/settlement/approve', async (req: Request, res: Response) => {
+  try {
+    const { tokenId, settlementConditionsHash, takerSignature } = req.body;
+
+    console.log('Approving settlement for tokenId:', tokenId);
+
+    // 1. Get settlement from storage
+    const settlement = storage.getSettlement(tokenId);
+    if (!settlement) {
+      return res.status(404).json({ error: 'Settlement not found' });
+    }
+
+    // 2. Verify conditions hash matches
+    if (settlement.settlementConditionsHash !== settlementConditionsHash) {
+      return res.status(400).json({ error: 'Conditions hash mismatch' });
+    }
+
+    // 3. Verify signature is valid
+    if (!takerSignature || takerSignature.length < 132) {
+      return res.status(400).json({ error: 'Invalid taker signature' });
+    }
+
+    console.log('Taker signature:', takerSignature);
+
+    // 4. Call contract approveSettlement
+    // Note: In production, use proper wallet/signer
+    console.log('Would call contract.approveSettlement with:', {
+      tokenId,
+      takerSignature
+    });
+
+    // 5. Create EIP-1271 signature (tokenId + taker signature)
+    const eip1271Signature = createEIP1271Signature(tokenId, takerSignature);
+    console.log('Created EIP-1271 signature');
+
+    // 6. Update settlement status
+    storage.updateSettlement(tokenId, {
+      status: 'approved',
+      eip1271Signature,
+    });
+
+    res.json({
+      success: true,
+      eip1271Signature,
+    });
+
+  } catch (error: any) {
+    console.error('Settlement approval failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/settlement/submit
+ * Submit order to CoW Protocol API
+ */
+router.post('/settlement/submit', async (req: Request, res: Response) => {
+  try {
+    const { tokenId, order, eip1271Signature } = req.body;
+
+    console.log('Submitting settlement to CoW Protocol for tokenId:', tokenId);
+
+    // 1. Get settlement from storage
+    const settlement = storage.getSettlement(tokenId);
+    if (!settlement || settlement.status !== 'approved') {
+      return res.status(400).json({ error: 'Settlement not approved' });
+    }
+
+    // 2. Get chain ID and protocol address
+    const chainId = parseInt(process.env.CHAIN_ID || '84532'); // Base Sepolia
+    const PROTOCOL_ADDRESS = process.env.PROTOCOL_ADDRESS || protocolContract.target as string;
+
+    console.log('Chain ID:', chainId);
+    console.log('Protocol address:', PROTOCOL_ADDRESS);
+
+    // 3. Submit to CoW API
+    try {
+      const orderUid = await submitCowOrder(
+        order,
+        eip1271Signature,
+        PROTOCOL_ADDRESS,
+        chainId
+      );
+
+      console.log('Order submitted successfully, UID:', orderUid);
+
+      // 4. Store order UID
+      storage.updateSettlement(tokenId, {
+        orderUid,
+        status: 'submitted',
+      });
+
+      res.json({ orderUid });
+
+    } catch (cowError: any) {
+      console.error('CoW API submission failed:', cowError);
+
+      // For development: return a mock order UID if CoW API fails
+      if (process.env.NODE_ENV === 'development') {
+        const mockOrderUid = ethers.id('mock-order-' + tokenId).slice(0, 114); // CoW UID format
+        console.log('Using mock order UID:', mockOrderUid);
+
+        storage.updateSettlement(tokenId, {
+          orderUid: mockOrderUid,
+          status: 'submitted',
+        });
+
+        return res.json({
+          orderUid: mockOrderUid,
+          warning: 'Using mock order UID (CoW API unavailable)',
+        });
+      }
+
+      throw cowError;
+    }
+
+  } catch (error: any) {
+    console.error('Settlement submission failed:', error);
     res.status(500).json({ error: error.message });
   }
 });

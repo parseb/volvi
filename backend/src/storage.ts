@@ -1,65 +1,79 @@
 import { OptionOffer, ActiveOption, OrderbookEntry } from './types.js';
+import { PostgresStorage, IStorage } from './db/postgres.js';
+import { RedisCache, getRedisCache } from './db/redis.js';
+
+export interface Settlement {
+  tokenId: string;
+  order: any;
+  orderHash: string;
+  settlementConditionsHash: string;
+  eip1271Signature?: string;
+  orderUid?: string;
+  status: 'initiated' | 'approved' | 'submitted' | 'completed';
+  createdAt: number;
+}
 
 /**
  * In-memory storage for MVP
  * TODO: Migrate to PostgreSQL or GunDB later
  */
-class InMemoryStorage {
+class InMemoryStorage implements IStorage {
   private offers: Map<string, OptionOffer> = new Map();
   private activeOptions: Map<string, ActiveOption> = new Map();
   private filledAmounts: Map<string, string> = new Map();
+  private settlements: Map<string, Settlement> = new Map();
 
   // Offers
-  addOffer(offer: OptionOffer): void {
+  async addOffer(offer: OptionOffer): Promise<void> {
     this.offers.set(offer.offerHash, offer);
   }
 
-  getOffer(offerHash: string): OptionOffer | undefined {
+  async getOffer(offerHash: string): Promise<OptionOffer | undefined> {
     return this.offers.get(offerHash);
   }
 
-  getAllOffers(): OptionOffer[] {
+  async getAllOffers(): Promise<OptionOffer[]> {
     return Array.from(this.offers.values());
   }
 
-  getOffersByToken(underlying: string, isCall: boolean): OptionOffer[] {
+  async getOffersByToken(underlying: string, isCall: boolean): Promise<OptionOffer[]> {
     return Array.from(this.offers.values()).filter(
       (offer) => offer.underlying.toLowerCase() === underlying.toLowerCase() && offer.isCall === isCall
     );
   }
 
-  deleteOffer(offerHash: string): void {
+  async deleteOffer(offerHash: string): Promise<void> {
     this.offers.delete(offerHash);
   }
 
   // Active Options
-  addActiveOption(option: ActiveOption): void {
+  async addActiveOption(option: ActiveOption): Promise<void> {
     this.activeOptions.set(option.tokenId, option);
   }
 
-  getActiveOption(tokenId: string): ActiveOption | undefined {
+  async getActiveOption(tokenId: string): Promise<ActiveOption | undefined> {
     return this.activeOptions.get(tokenId);
   }
 
-  getActiveOptionsByTaker(taker: string): ActiveOption[] {
+  async getActiveOptionsByTaker(taker: string): Promise<ActiveOption[]> {
     return Array.from(this.activeOptions.values()).filter(
       (option) => option.taker.toLowerCase() === taker.toLowerCase() && !option.settled
     );
   }
 
-  getActiveOptionsByWriter(writer: string): ActiveOption[] {
+  async getActiveOptionsByWriter(writer: string): Promise<ActiveOption[]> {
     return Array.from(this.activeOptions.values()).filter(
       (option) => option.writer.toLowerCase() === writer.toLowerCase() && !option.settled
     );
   }
 
-  getActiveOptionsByOffer(offerHash: string): ActiveOption[] {
+  async getActiveOptionsByOffer(offerHash: string): Promise<ActiveOption[]> {
     return Array.from(this.activeOptions.values()).filter(
       (option) => option.offerHash === offerHash && !option.settled
     );
   }
 
-  settleOption(tokenId: string): void {
+  async settleOption(tokenId: string): Promise<void> {
     const option = this.activeOptions.get(tokenId);
     if (option) {
       option.settled = true;
@@ -68,24 +82,24 @@ class InMemoryStorage {
   }
 
   // Filled Amounts
-  updateFilledAmount(offerHash: string, amount: string): void {
+  async updateFilledAmount(offerHash: string, amount: string): Promise<void> {
     const current = this.filledAmounts.get(offerHash) || '0';
     const newAmount = (BigInt(current) + BigInt(amount)).toString();
     this.filledAmounts.set(offerHash, newAmount);
   }
 
-  getFilledAmount(offerHash: string): string {
+  async getFilledAmount(offerHash: string): Promise<string> {
     return this.filledAmounts.get(offerHash) || '0';
   }
 
   // Orderbook utilities
-  getOrderbook(underlying: string, isCall?: boolean, filters?: {
+  async getOrderbook(underlying: string, isCall?: boolean, filters?: {
     minDuration?: number;
     maxDuration?: number;
     minSize?: string;
-  }): OrderbookEntry[] {
+  }): Promise<OrderbookEntry[]> {
     let offers = isCall !== undefined
-      ? this.getOffersByToken(underlying, isCall)
+      ? await this.getOffersByToken(underlying, isCall)
       : Array.from(this.offers.values()).filter(
           (offer) => offer.underlying.toLowerCase() === underlying.toLowerCase()
         );
@@ -101,8 +115,8 @@ class InMemoryStorage {
     }
 
     // Calculate remaining amounts and convert to OrderbookEntry
-    const entries: OrderbookEntry[] = offers.map(offer => {
-      const filledAmount = this.getFilledAmount(offer.offerHash);
+    const entries: OrderbookEntry[] = await Promise.all(offers.map(async offer => {
+      const filledAmount = await this.getFilledAmount(offer.offerHash);
       const remainingAmount = (BigInt(offer.collateralAmount) - BigInt(filledAmount)).toString();
 
       // Filter by min size if specified
@@ -120,7 +134,7 @@ class InMemoryStorage {
         totalPremium,
         isValid: BigInt(remainingAmount) > 0 && Number(offer.deadline) > Math.floor(Date.now() / 1000)
       };
-    }).filter(entry => entry !== null) as OrderbookEntry[];
+    })).filter(entry => entry !== null) as OrderbookEntry[];
 
     // Sort by totalPremium (price × size) ascending
     return entries
@@ -131,12 +145,46 @@ class InMemoryStorage {
       });
   }
 
+  // Settlements
+  async addSettlement(settlement: Settlement): Promise<void> {
+    this.settlements.set(settlement.tokenId, settlement);
+  }
+
+  async getSettlement(tokenId: string): Promise<Settlement | undefined> {
+    return this.settlements.get(tokenId);
+  }
+
+  async updateSettlement(tokenId: string, updates: Partial<Settlement>): Promise<void> {
+    const existing = this.settlements.get(tokenId);
+    if (existing) {
+      this.settlements.set(tokenId, { ...existing, ...updates });
+    }
+  }
+
+  async getAllSettlements(): Promise<Settlement[]> {
+    return Array.from(this.settlements.values());
+  }
+
   // Clear all data (for testing)
-  clear(): void {
+  async clear(): Promise<void> {
     this.offers.clear();
     this.activeOptions.clear();
     this.filledAmounts.clear();
+    this.settlements.clear();
   }
 }
 
-export const storage = new InMemoryStorage();
+// Storage factory - chooses between in-memory and PostgreSQL based on environment
+function createStorage(): IStorage {
+  const usePostgres = process.env.USE_POSTGRES === 'true';
+
+  if (usePostgres) {
+    console.log('Using PostgreSQL storage');
+    return new PostgresStorage();
+  } else {
+    console.log('Using in-memory storage');
+    return new InMemoryStorage();
+  }
+}
+
+export const storage = createStorage();

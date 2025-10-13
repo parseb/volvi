@@ -6,6 +6,8 @@
   "scripts": {
     "start": "./scripts/start-dev.sh",
     "start:all": "./scripts/start-all.sh",
+    "start:sepolia": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "start:base-sepolia": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev": "concurrently \"npm run fork\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
@@ -21,7 +23,18 @@
     "test:verbose": "forge test -vvv",
     "test:fork": "forge test --fork-url $BASE_RPC_URL",
     "deploy:testnet": "forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast",
-    "deploy:mainnet": "forge script script/Deploy.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify"
+    "deploy:mainnet": "forge script script/Deploy.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:dev": "docker-compose up",
+    "docker:restart": "docker-compose restart",
+    "docker:ps": "docker-compose ps",
+    "docker:clean": "docker-compose down -v",
+    "docker:db:init": "docker-compose exec postgres psql -U protocol_user -d options_protocol -f /docker-entrypoint-initdb.d/init.sql",
+    "docker:db:shell": "docker-compose exec postgres psql -U protocol_user -d options_protocol",
+    "docker:redis:cli": "docker-compose exec redis redis-cli"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

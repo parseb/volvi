@@ -1,7 +1,9 @@
 // Price feed IDs for Pyth oracle
 const PRICE_FEEDS: Record<string, string> = {
-  // WETH on Base
+  // WETH on Base & Base Sepolia (same address)
   '0x4200000000000000000000000000000000000006': '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace', // ETH/USD
+  // WETH on Sepolia
+  '0x7b79995e5f793a07bc00c21412e50ecae098e7f9': '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace', // ETH/USD
 };
 
 // Pyth Hermes API endpoint
