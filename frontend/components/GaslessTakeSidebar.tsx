@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { AlphaNoticeCompact } from './AlphaNotice';
+import { useFieldValidation } from '@/lib/hooks/useAlphaValidation';
+import { validateCollateral, validateDuration, validateGasReimbursement, ALPHA_LIMITS } from '@/lib/alphaLimits';
 import { useAccount, useWalletClient } from 'wagmi';
 import { ethers, formatUnits } from 'ethers';
 import {
@@ -35,7 +38,16 @@ export default function GaslessTakeSidebar({
   const { data: walletClient } = useWalletClient();
 
   const [fillAmount, setFillAmount] = useState('');
-  const [duration, setDuration] = useState<number>(7);
+  const [duration, setDuration] = useState<number>(ALPHA_LIMITS.duration.min);
+  // Alpha validation hooks
+  const fillAmountValidation = useFieldValidation(parseFloat(fillAmount) || 0, validateCollateral);
+  const durationValidation = useFieldValidation(duration, validateDuration);
+  // Gas cost is loaded async, so validate after it's loaded
+  const gasReimbursementValidation = useFieldValidation(
+    gasCost ? parseFloat((Number(gasCost.gasCostUSDC) / 1e6).toFixed(6)) : 0,
+    validateGasReimbursement
+  );
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gasCost, setGasCost] = useState<{
@@ -73,6 +85,16 @@ export default function GaslessTakeSidebar({
   };
 
   const handleCreateAuthorizations = async () => {
+    // Validate alpha limits before creating authorizations
+    const errors: string[] = [];
+    if (fillAmountValidation.error) errors.push(fillAmountValidation.error);
+    if (durationValidation.error) errors.push(durationValidation.error);
+    if (gasReimbursementValidation.error) errors.push(gasReimbursementValidation.error);
+    setValidationErrors(errors);
+    if (errors.length > 0) {
+      setError('Please fix validation errors');
+      return;
+    }
     if (!address || !walletClient || !offer || !gasCost) {
       setError('Missing required data');
       return;
@@ -121,6 +143,16 @@ export default function GaslessTakeSidebar({
   };
 
   const handleSubmit = async () => {
+    // Validate alpha limits before submitting
+    const errors: string[] = [];
+    if (fillAmountValidation.error) errors.push(fillAmountValidation.error);
+    if (durationValidation.error) errors.push(durationValidation.error);
+    if (gasReimbursementValidation.error) errors.push(gasReimbursementValidation.error);
+    setValidationErrors(errors);
+    if (errors.length > 0) {
+      setError('Please fix validation errors');
+      return;
+    }
     if (!premiumAuth || !gasAuth || !offer) {
       setError('Missing authorizations');
       return;
@@ -168,6 +200,10 @@ export default function GaslessTakeSidebar({
 
   return (
     <div className="fixed right-0 top-0 h-full w-96 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 p-6 overflow-y-auto shadow-xl">
+      {/* Alpha Notice Banner */}
+      <div className="mb-4">
+        <AlphaNoticeCompact />
+      </div>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Take Option (Gasless)</h2>
         <button onClick={onClose} className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white text-2xl leading-none">
@@ -198,10 +234,17 @@ export default function GaslessTakeSidebar({
             type="number"
             value={fillAmount}
             onChange={(e) => setFillAmount(e.target.value)}
-            className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
-            placeholder="0.0"
+            className={`w-full bg-white dark:bg-gray-800 border rounded px-3 py-2 text-gray-900 dark:text-white ${fillAmountValidation.error ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
+            placeholder={`${ALPHA_LIMITS.collateral.min} - ${ALPHA_LIMITS.collateral.max}`}
+            step="0.0001"
+            min={ALPHA_LIMITS.collateral.min}
+            max={ALPHA_LIMITS.collateral.max}
             disabled={loading}
+            required
           />
+          {fillAmountValidation.error && (
+            <p className="text-red-600 text-xs mt-1">{fillAmountValidation.error}</p>
+          )}
         </div>
 
         {/* Duration */}
@@ -209,19 +252,25 @@ export default function GaslessTakeSidebar({
           <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">
             Duration (days)
           </label>
-          <select
+          <input
+            type="number"
             value={duration}
-            onChange={(e) => setDuration(parseInt(e.target.value))}
-            className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-gray-900 dark:text-white"
+            onChange={(e) => setDuration(Number(e.target.value))}
+            className={`w-full bg-white dark:bg-gray-800 border rounded px-3 py-2 text-gray-900 dark:text-white ${durationValidation.error ? 'border-red-500' : 'border-gray-300 dark:border-gray-700'}`}
+            min={ALPHA_LIMITS.duration.min}
+            max={ALPHA_LIMITS.duration.max}
+            step={1}
             disabled={loading}
-          >
-            <option value={1}>1 day</option>
-            <option value={3}>3 days</option>
-            <option value={7}>7 days</option>
-            <option value={14}>14 days</option>
-            <option value={30}>30 days</option>
-          </select>
+            required
+          />
+          {durationValidation.error && (
+            <p className="text-red-600 text-xs mt-1">{durationValidation.error}</p>
+          )}
         </div>
+        {/* Gas Reimbursement Validation (hidden input, but show error if any) */}
+        {gasReimbursementValidation.error && (
+          <div className="text-red-600 text-xs mb-2">{gasReimbursementValidation.error}</div>
+        )}
 
         {/* Cost Breakdown */}
         <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 space-y-2">
@@ -245,10 +294,22 @@ export default function GaslessTakeSidebar({
         </div>
 
         {/* Authorizations Status */}
+        {validationErrors.length > 0 && (
+          <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-800 mb-2">
+            <p className="font-semibold text-red-700 dark:text-red-300 text-sm mb-2">
+              ⚠️ Alpha Limit Violations:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-red-600 dark:text-red-400 text-xs">
+              {validationErrors.map((error, i) => (
+                <li key={i}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {!premiumAuth || !gasAuth ? (
           <button
             onClick={handleCreateAuthorizations}
-            disabled={loading || !fillAmount || parseFloat(fillAmount) <= 0}
+            disabled={loading || !fillAmount || parseFloat(fillAmount) <= 0 || validationErrors.length > 0}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
           >
             {loading ? 'Creating Authorizations...' : 'Create Authorizations'}
@@ -266,7 +327,7 @@ export default function GaslessTakeSidebar({
             </div>
             <button
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || validationErrors.length > 0}
               className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
             >
               {loading ? 'Submitting...' : 'Submit Transaction'}

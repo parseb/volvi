@@ -1,6 +1,14 @@
-import dotenv from 'dotenv';
 
-dotenv.config({ path: '../.env.local' });
+
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Fix for ES module scope: get __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// Load .env from project root
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 function formatPrivateKey(key: string): string {
   if (!key) return '';
@@ -11,9 +19,30 @@ function formatPrivateKey(key: string): string {
   return key;
 }
 
+
 export const config = {
   port: process.env.API_PORT || 3001,
-  rpcUrl: process.env.RPC_URL || process.env.BASE_RPC_URL || 'http://127.0.0.1:8545',
+  // Use only .env RPC endpoints for all networks
+  rpcUrl: (() => {
+    const chainId = process.env.NEXT_PUBLIC_CHAIN_ID || process.env.CHAIN_ID;
+    if (chainId === '11155111') {
+      if (!process.env.SEPOLIA_RPC_URL) throw new Error('SEPOLIA_RPC_URL must be set in .env');
+      return process.env.SEPOLIA_RPC_URL;
+    }
+    if (chainId === '8453') {
+      if (!process.env.BASE_RPC_URL) throw new Error('BASE_RPC_URL must be set in .env');
+      return process.env.BASE_RPC_URL;
+    }
+    if (chainId === '84532') {
+      if (!process.env.BASE_SEPOLIA_RPC_URL) throw new Error('BASE_SEPOLIA_RPC_URL must be set in .env');
+      return process.env.BASE_SEPOLIA_RPC_URL;
+    }
+    if (chainId === '123999') {
+      if (!process.env.FORK_RPC_URL) throw new Error('FORK_RPC_URL must be set in .env');
+      return process.env.FORK_RPC_URL;
+    }
+    throw new Error('Unsupported or missing CHAIN_ID/NEXT_PUBLIC_CHAIN_ID');
+  })(),
   protocolAddress: process.env.NEXT_PUBLIC_PROTOCOL_ADDRESS || '',
   broadcasterPrivateKey: formatPrivateKey(process.env.BROADCASTER_PRIVATE_KEY || ''),
   chainId: parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || process.env.CHAIN_ID || '8453'),

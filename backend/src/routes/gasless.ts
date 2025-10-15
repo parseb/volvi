@@ -48,15 +48,17 @@ router.post('/take-gasless', async (req: Request, res: Response) => {
     // Validate request
     const validated = TakeGaslessSchema.parse(req.body);
 
+    // Use only config.rpcUrl (from .env)
+    const { config } = await import('../config.js');
     const relayer = new RelayerService(
-      process.env.RPC_URL || 'http://localhost:8545',
+      config.rpcUrl,
       process.env.RELAYER_PRIVATE_KEY!,
       process.env.PROTOCOL_ADDRESS!,
       process.env.USDC_ADDRESS!
     );
 
     const x402 = new x402Service(
-      process.env.RPC_URL || 'http://localhost:8545',
+      config.rpcUrl,
       parseFloat(process.env.ETH_PRICE_USD || '2500')
     );
 

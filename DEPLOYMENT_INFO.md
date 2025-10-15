@@ -8,7 +8,7 @@ All deployments use the **optimized gasless version** of the protocol with CoW P
 - **Contract Address:** `0xdF1AbDe2967F54E391b6d8FBC655F15847cf87ce`
 - **Contract Type:** OptionsProtocolGasless (optimized, 24,168 bytes)
 - **Chain ID:** 11155111
-- **RPC URL:** https://ethereum-sepolia-rpc.publicnode.com
+- **RPC URL:** https://eth-sepolia.g.alchemy.com/v2/0GjaZPZDDDnYA7PfvC6_Q
 - **Deployed:** October 13, 2025
 - **Status:** ✅ Verified and Tested
 
@@ -77,7 +77,7 @@ The backend needs the protocol address set based on the target network.
 ```bash
 export NEXT_PUBLIC_CHAIN_ID=11155111
 export NEXT_PUBLIC_PROTOCOL_ADDRESS=0xdF1AbDe2967F54E391b6d8FBC655F15847cf87ce
-export SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+export SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/0GjaZPZDDDnYA7PfvC6_Q
 ```
 
 **For Base Sepolia:**

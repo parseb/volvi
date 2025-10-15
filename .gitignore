@@ -19,6 +19,8 @@ out/
 .env.production.local
 .env.development.local
 .env.test.local
+.env.*
+.env.*.
 
 # Foundry
 cache/

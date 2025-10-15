@@ -177,7 +177,7 @@ DATABASE_URL=postgresql://protocol_user:protocol_password@postgres:5432/options_
 
 # Blockchain
 BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
-SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/0GjaZPZDDDnYA7PfvC6_Q
 
 # Contract Addresses
 SEPOLIA_PROTOCOL_ADDRESS=0xdF1AbDe2967F54E391b6d8FBC655F15847cf87ce

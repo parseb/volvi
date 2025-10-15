@@ -50,7 +50,9 @@ router.post('/initiate', async (req: Request, res: Response) => {
     );
 
     // Get option details from contract
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || 'http://localhost:8545');
+    // Use only config.rpcUrl (from .env)
+    const { config } = await import('../config.js');
+    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
     const protocolContract = new ethers.Contract(
       process.env.PROTOCOL_ADDRESS!,
       [
