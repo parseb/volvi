@@ -6,6 +6,7 @@ import { Orderbook } from '@/components/Orderbook';
 import GaslessTakeSidebar from '@/components/GaslessTakeSidebar';
 import { WriterSidebar } from '@/components/WriterSidebar';
 import TokenSelector from '@/components/TokenSelector';
+import { AlphaNotice, AlphaBadge } from '@/components/AlphaNotice';
 import { chainId } from '@/lib/config';
 import type { OrderbookOffer } from '@/lib/types';
 import type { Token } from '@/lib/cowswap-tokens';
@@ -35,11 +36,16 @@ export default function Home() {
       <header className="border-b bg-white dark:bg-gray-800">
         <div className="container mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold">Options Protocol</h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Decentralized options trading on Base
-              </p>
+            <div className="flex items-center gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold">Options Protocol</h1>
+                  <AlphaBadge />
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Decentralized options trading on Base
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <a
@@ -58,6 +64,9 @@ export default function Home() {
       <div className="flex">
         {/* Left: Orderbook */}
         <div className="flex-1 p-6">
+          {/* Alpha Notice Banner */}
+          <AlphaNotice />
+
           <div className="mb-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">Orderbook</h2>

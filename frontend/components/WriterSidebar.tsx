@@ -6,6 +6,9 @@ import { parseUnits, keccak256, encodeAbiParameters, erc20Abi, maxUint256 } from
 import { protocolAddress, chainId } from '@/lib/config';
 import { submitOffer } from '@/lib/api';
 import TokenSelector from './TokenSelector';
+import { AlphaNoticeCompact } from './AlphaNotice';
+import { useAlphaValidation, useFieldValidation } from '@/lib/hooks/useAlphaValidation';
+import { validateCollateral, validatePremiumPerDay, validateDuration, validateOfferExpiry, ALPHA_LIMITS } from '@/lib/alphaLimits';
 import type { OptionOffer } from '@/lib/types';
 import type { Token } from '@/lib/cowswap-tokens';
 
@@ -27,10 +30,10 @@ export function WriterSidebar() {
     collateralAmount: '',
     isCall: true,
     premiumPerDay: '',
-    minDuration: 7,
-    maxDuration: 365,
+    minDuration: ALPHA_LIMITS.duration.min,
+    maxDuration: ALPHA_LIMITS.duration.max,
     minFillAmount: '',
-    deadline: 30, // Days from now
+    deadline: ALPHA_LIMITS.offer.maxValidityDays, // Days from now
   });
 
   const [status, setStatus] = useState<'idle' | 'approving' | 'signing' | 'submitting' | 'success' | 'error'>('idle');
@@ -39,6 +42,13 @@ export function WriterSidebar() {
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
   const [insufficientBalance, setInsufficientBalance] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  // Alpha limits validation hooks
+  const collateralValidation = useFieldValidation(parseFloat(formData.collateralAmount) || 0, validateCollateral);
+  const premiumValidation = useFieldValidation(parseFloat(formData.premiumPerDay) || 0, validatePremiumPerDay);
+  const minDurationValidation = useFieldValidation(formData.minDuration, validateDuration);
+  const maxDurationValidation = useFieldValidation(formData.maxDuration, validateDuration);
 
   // Check token balance
   const { data: tokenBalance } = useReadContract({
@@ -187,12 +197,35 @@ export function WriterSidebar() {
       return;
     }
 
+    // Validate alpha limits
+    const errors: string[] = [];
+    if (collateralValidation.error) errors.push(collateralValidation.error);
+    if (premiumValidation.error) errors.push(premiumValidation.error);
+    if (minDurationValidation.error) errors.push(minDurationValidation.error);
+    if (maxDurationValidation.error) errors.push(maxDurationValidation.error);
+
+    // Validate offer expiry
+    const expiryTimestamp = Math.floor(Date.now() / 1000) + formData.deadline * 86400;
+    const expiryValidation = validateOfferExpiry(expiryTimestamp);
+    if (!expiryValidation.valid && expiryValidation.error) {
+      errors.push(expiryValidation.error);
+    }
+
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      setStatus('error');
+      setErrorMsg('Please fix validation errors');
+      return;
+    }
+
+    setValidationErrors([]);
+
     try {
       setStatus('signing');
       setErrorMsg('');
 
       // Build the offer
-      const deadlineTimestamp = BigInt(Math.floor(Date.now() / 1000) + formData.deadline * 86400);
+      const deadlineTimestamp = BigInt(expiryTimestamp);
       const configHash = keccak256(encodeAbiParameters(
         [{ type: 'address' }],
         [formData.underlying as `0x${string}`]
@@ -270,10 +303,13 @@ export function WriterSidebar() {
   };
 
   return (
-    <div className="w-96 border-l p-6 bg-gray-50 dark:bg-gray-900">
+    <div className="w-96 border-l p-6 bg-gray-50 dark:bg-gray-900 overflow-y-auto">
       <h2 className="text-xl font-bold mb-4">Write Option</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Alpha Notice */}
+      <AlphaNoticeCompact />
+
+      <form onSubmit={handleSubmit} className="space-y-4 mt-4">
         {/* Option Type */}
         <div>
           <label className="block text-sm font-medium mb-2">Option Type</label>
@@ -330,55 +366,100 @@ export function WriterSidebar() {
 
         {/* Collateral Amount */}
         <div>
-          <label className="block text-sm font-medium mb-2">Collateral Amount</label>
+          <label className="block text-sm font-medium mb-2">
+            Collateral Amount
+            <span className="text-xs text-gray-500 ml-2">
+              ({ALPHA_LIMITS.collateral.min} - {ALPHA_LIMITS.collateral.max} ETH)
+            </span>
+          </label>
           <input
             type="number"
             value={formData.collateralAmount}
             onChange={(e) => setFormData((f) => ({ ...f, collateralAmount: e.target.value }))}
-            placeholder="0.0"
-            className="w-full px-4 py-2 border rounded bg-white dark:bg-gray-800"
-            step="0.01"
+            placeholder={`${ALPHA_LIMITS.collateral.min} - ${ALPHA_LIMITS.collateral.max}`}
+            className={`w-full px-4 py-2 border rounded bg-white dark:bg-gray-800 ${
+              collateralValidation.error ? 'border-red-500' : ''
+            }`}
+            step="0.0001"
+            min={ALPHA_LIMITS.collateral.min}
+            max={ALPHA_LIMITS.collateral.max}
             required
           />
+          {collateralValidation.error && (
+            <p className="text-red-600 text-xs mt-1">{collateralValidation.error}</p>
+          )}
         </div>
 
         {/* Premium Per Day */}
         <div>
-          <label className="block text-sm font-medium mb-2">Premium Per Day (USDC)</label>
+          <label className="block text-sm font-medium mb-2">
+            Premium Per Day (USDC)
+            <span className="text-xs text-gray-500 ml-2">
+              (min {ALPHA_LIMITS.premium.min} USDC)
+            </span>
+          </label>
           <input
             type="number"
             value={formData.premiumPerDay}
             onChange={(e) => setFormData((f) => ({ ...f, premiumPerDay: e.target.value }))}
-            placeholder="0.0"
-            className="w-full px-4 py-2 border rounded bg-white dark:bg-gray-800"
+            placeholder={`Min ${ALPHA_LIMITS.premium.min}`}
+            className={`w-full px-4 py-2 border rounded bg-white dark:bg-gray-800 ${
+              premiumValidation.error ? 'border-red-500' : ''
+            }`}
             step="0.01"
+            min={ALPHA_LIMITS.premium.min}
             required
           />
+          {premiumValidation.error && (
+            <p className="text-red-600 text-xs mt-1">{premiumValidation.error}</p>
+          )}
         </div>
 
         {/* Duration Range */}
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-sm font-medium mb-2">Min Duration (days)</label>
+            <label className="block text-sm font-medium mb-2">
+              Min Duration (days)
+              <span className="text-xs text-gray-500 block">
+                ({ALPHA_LIMITS.duration.min}-{ALPHA_LIMITS.duration.max})
+              </span>
+            </label>
             <input
               type="number"
               value={formData.minDuration}
               onChange={(e) => setFormData((f) => ({ ...f, minDuration: parseInt(e.target.value) }))}
-              className="w-full px-4 py-2 border rounded bg-white dark:bg-gray-800"
-              min="1"
+              className={`w-full px-4 py-2 border rounded bg-white dark:bg-gray-800 ${
+                minDurationValidation.error ? 'border-red-500' : ''
+              }`}
+              min={ALPHA_LIMITS.duration.min}
+              max={ALPHA_LIMITS.duration.max}
               required
             />
+            {minDurationValidation.error && (
+              <p className="text-red-600 text-xs mt-1">{minDurationValidation.error}</p>
+            )}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-2">Max Duration (days)</label>
+            <label className="block text-sm font-medium mb-2">
+              Max Duration (days)
+              <span className="text-xs text-gray-500 block">
+                ({ALPHA_LIMITS.duration.min}-{ALPHA_LIMITS.duration.max})
+              </span>
+            </label>
             <input
               type="number"
               value={formData.maxDuration}
               onChange={(e) => setFormData((f) => ({ ...f, maxDuration: parseInt(e.target.value) }))}
-              className="w-full px-4 py-2 border rounded bg-white dark:bg-gray-800"
-              min={formData.minDuration}
+              className={`w-full px-4 py-2 border rounded bg-white dark:bg-gray-800 ${
+                maxDurationValidation.error ? 'border-red-500' : ''
+              }`}
+              min={Math.max(formData.minDuration, ALPHA_LIMITS.duration.min)}
+              max={ALPHA_LIMITS.duration.max}
               required
             />
+            {maxDurationValidation.error && (
+              <p className="text-red-600 text-xs mt-1">{maxDurationValidation.error}</p>
+            )}
           </div>
         </div>
 
@@ -397,16 +478,36 @@ export function WriterSidebar() {
 
         {/* Deadline */}
         <div>
-          <label className="block text-sm font-medium mb-2">Offer Valid For (days)</label>
+          <label className="block text-sm font-medium mb-2">
+            Offer Valid For (days)
+            <span className="text-xs text-gray-500 ml-2">
+              (max {ALPHA_LIMITS.offer.maxValidityDays} days)
+            </span>
+          </label>
           <input
             type="number"
             value={formData.deadline}
             onChange={(e) => setFormData((f) => ({ ...f, deadline: parseInt(e.target.value) }))}
             className="w-full px-4 py-2 border rounded bg-white dark:bg-gray-800"
             min="1"
+            max={ALPHA_LIMITS.offer.maxValidityDays}
             required
           />
         </div>
+
+        {/* Validation Errors */}
+        {validationErrors.length > 0 && (
+          <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-800">
+            <p className="font-semibold text-red-700 dark:text-red-300 text-sm mb-2">
+              ⚠️ Alpha Limit Violations:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-red-600 dark:text-red-400 text-xs">
+              {validationErrors.map((error, i) => (
+                <li key={i}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Approval/Submit Buttons */}
         {!isConnected ? (
@@ -473,12 +574,13 @@ export function WriterSidebar() {
 
         {/* Info */}
         <div className="text-xs text-gray-500 mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded">
-          <p className="font-semibold mb-1">How it works:</p>
+          <p className="font-semibold mb-1">🧪 Alpha Launch - How it works:</p>
           <ul className="list-disc list-inside space-y-1">
             <li>Approve once to enable writing offers with this token</li>
             <li>Sign offers off-chain (gasless)</li>
             <li>Collateral is locked only when someone takes your offer</li>
             <li>Takers pay 100% gasless via USDC authorization</li>
+            <li>Alpha limits: {ALPHA_LIMITS.collateral.min}-{ALPHA_LIMITS.collateral.max} ETH, {ALPHA_LIMITS.duration.min}-{ALPHA_LIMITS.duration.max} days</li>
           </ul>
         </div>
       </form>
