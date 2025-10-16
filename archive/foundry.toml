@@ -1,0 +1,29 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.20"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "@uniswap/v3-core/=lib/v3-core/",
+    "@uniswap/v3-periphery/=lib/v3-periphery/",
+    "@pyth/=lib/pyth-sdk-solidity/",
+    "forge-std/=lib/forge-std/src/"
+]
+
+# Allow script to write deployment info
+fs_permissions = [{ access = "read-write", path = "./" }]
+
+[rpc_endpoints]
+base = "${BASE_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+sepolia = "${SEPOLIA_RPC_URL}"
+fork = "${FORK_RPC_URL}"
+
+[etherscan]
+base = { key = "${BASESCAN_API_KEY}" }
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111, url = "https://api-sepolia.etherscan.io/api" }

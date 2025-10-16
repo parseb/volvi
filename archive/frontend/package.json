@@ -1,0 +1,36 @@
+{
+  "name": "options-protocol-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@reown/appkit": "^1.8.9",
+    "@reown/appkit-adapter-wagmi": "^1.8.9",
+    "@tanstack/react-query": "^5.56.0",
+    "ethers": "^6.9.0",
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "viem": "^2.21.0",
+    "wagmi": "^2.12.0",
+    "zustand": "^5.0.0"
+  },
+  "overrides": {
+    "@reown/appkit": "^1.8.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.0.1",
+    "concurrently": "^9.2.1",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5"
+  }
+}
