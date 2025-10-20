@@ -1,7 +1,13 @@
+import { useState } from 'react';
 import { useVincent } from '@/hooks/useVincent';
+import { CreateProfileForm } from '@/components/CreateProfileForm';
+import { CreateOfferForm } from '@/components/CreateOfferForm';
+import { Orderbook } from '@/components/Orderbook';
+import { PositionsList } from '@/components/PositionsList';
 
 export function DashboardPage() {
   const { pkpInfo, disconnect } = useVincent();
+  const [activeTab, setActiveTab] = useState<'profile' | 'write' | 'orderbook' | 'positions'>('orderbook');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -33,55 +39,58 @@ export function DashboardPage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Create Profile Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+        {/* Navigation Tabs */}
+        <div className="mb-6">
+          <nav className="flex gap-2 border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('orderbook')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'orderbook'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Orderbook
+            </button>
+            <button
+              onClick={() => setActiveTab('positions')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'positions'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              My Positions
+            </button>
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'profile'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
               Create Profile
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Create a USDC liquidity profile for writing options
-            </p>
-            <button className="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded transition-colors">
-              Get Started
             </button>
-          </div>
-
-          {/* Write Options Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            <button
+              onClick={() => setActiveTab('write')}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === 'write'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
               Write Options
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Create signed offers to write calls and puts
-            </p>
-            <button className="w-full bg-gray-300 text-gray-500 font-medium py-2 px-4 rounded cursor-not-allowed">
-              Coming Soon
             </button>
-          </div>
-
-          {/* Take Options Card */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
-              Take Options
-            </h2>
-            <p className="text-sm text-gray-600 mb-4">
-              Browse orderbook and take options gaslessly
-            </p>
-            <button className="w-full bg-gray-300 text-gray-500 font-medium py-2 px-4 rounded cursor-not-allowed">
-              Coming Soon
-            </button>
-          </div>
+          </nav>
         </div>
 
-        {/* Positions Section */}
-        <div className="mt-8 bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Your Positions
-          </h2>
-          <div className="text-center py-12 text-gray-500">
-            No positions yet. Create a profile or take an option to get started!
-          </div>
+        {/* Tab Content */}
+        <div>
+          {activeTab === 'orderbook' && <Orderbook />}
+          {activeTab === 'positions' && <PositionsList />}
+          {activeTab === 'profile' && <CreateProfileForm />}
+          {activeTab === 'write' && <CreateOfferForm />}
         </div>
       </main>
     </div>

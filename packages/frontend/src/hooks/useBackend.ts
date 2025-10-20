@@ -4,6 +4,7 @@ import { env } from '@/config/env';
 
 type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
+// Request/Response types
 interface CreateProfileRequest {
   totalUSDC: string;
   maxLockDays: number;
@@ -15,6 +16,103 @@ interface CreateProfileRequest {
 interface CreateProfileResponse {
   profileId: string;
   txHash: string;
+}
+
+interface OptionOffer {
+  writer: string;
+  profileId: string;
+  underlying: string;
+  collateralAmount: string;
+  stablecoin: string;
+  isCall: boolean;
+  premiumPerDay: string;
+  minDuration: number;
+  maxDuration: number;
+  minFillAmount: string;
+  deadline: number;
+  configHash: string;
+}
+
+interface CreateOfferRequest {
+  profileId: string;
+  underlying: string;
+  collateralAmount: string;
+  stablecoin: string;
+  isCall: boolean;
+  premiumPerDay: string;
+  minDuration: number;
+  maxDuration: number;
+  minFillAmount: string;
+  deadline: number;
+  configHash: string;
+}
+
+interface CreateOfferResponse {
+  offerHash: string;
+  signature: string;
+  offer: OptionOffer;
+}
+
+interface OrderbookResponse {
+  offers: Array<{
+    offerHash: string;
+    offer: OptionOffer;
+    signature: string;
+    filledAmount?: string;
+  }>;
+  count: number;
+}
+
+interface EIP3009Auth {
+  from: string;
+  to: string;
+  value: string;
+  validAfter: string;
+  validBefore: string;
+  nonce: string;
+  v: number;
+  r: string;
+  s: string;
+}
+
+interface TakeOptionRequest {
+  offer: OptionOffer;
+  offerSignature: string;
+  fillAmount: string;
+  duration: number;
+  paymentAuth: EIP3009Auth;
+}
+
+interface TakeOptionResponse {
+  tokenId: string;
+  txHash: string;
+}
+
+interface SettleOptionRequest {
+  tokenId: string;
+}
+
+interface SettleOptionResponse {
+  txHash: string;
+  profit: string;
+}
+
+interface Position {
+  tokenId: string;
+  holder: string;
+  writer: string;
+  underlying: string;
+  collateralLocked: string;
+  isCall: boolean;
+  strikePrice: string;
+  startTime: number;
+  expiryTime: number;
+  settled: boolean;
+}
+
+interface PositionsResponse {
+  positions: Position[];
+  count: number;
 }
 
 /**
@@ -67,11 +165,48 @@ export function useBackend() {
       [sendRequest]
     ),
 
-    // TODO: Add more endpoints as they are implemented
-    // createOffer: (params) => sendRequest('/offers', 'POST', params),
-    // getOrderbook: () => sendRequest('/orderbook', 'GET'),
-    // takeOption: (params) => sendRequest('/take', 'POST', params),
-    // getPositions: () => sendRequest('/positions', 'GET'),
-    // settleOption: (tokenId) => sendRequest('/settle', 'POST', { tokenId }),
+    // Create offer
+    createOffer: useCallback(
+      (params: CreateOfferRequest) =>
+        sendRequest<CreateOfferResponse>('/offers', 'POST', params),
+      [sendRequest]
+    ),
+
+    // Get orderbook
+    getOrderbook: useCallback(
+      () => sendRequest<OrderbookResponse>('/orderbook', 'GET'),
+      [sendRequest]
+    ),
+
+    // Take option
+    takeOption: useCallback(
+      (params: TakeOptionRequest) =>
+        sendRequest<TakeOptionResponse>('/take', 'POST', params),
+      [sendRequest]
+    ),
+
+    // Get positions
+    getPositions: useCallback(
+      () => sendRequest<PositionsResponse>('/positions', 'GET'),
+      [sendRequest]
+    ),
+
+    // Settle option
+    settleOption: useCallback(
+      (params: SettleOptionRequest) =>
+        sendRequest<SettleOptionResponse>('/settle', 'POST', params),
+      [sendRequest]
+    ),
   };
 }
+
+// Export types
+export type {
+  CreateProfileRequest,
+  CreateOfferRequest,
+  TakeOptionRequest,
+  SettleOptionRequest,
+  OptionOffer,
+  EIP3009Auth,
+  Position,
+};
