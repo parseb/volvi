@@ -8,9 +8,8 @@
  * - Settle Option: Settle expired options
  */
 
+// Export all abilities
 export * from './create-profile';
-
-// TODO: Uncomment as abilities are implemented
-// export * from './create-offer';
-// export * from './take-option';
-// export * from './settle-option';
+export * from './create-offer';
+export * from './take-option';
+export * from './settle-option';
