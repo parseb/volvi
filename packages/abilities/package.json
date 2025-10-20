@@ -1,0 +1,33 @@
+{
+  "name": "@volvi/abilities",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Custom Vincent abilities for Volvi Options Protocol",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest",
+    "publish:abilities": "node scripts/publish-to-ipfs.js"
+  },
+  "dependencies": {
+    "@lit-protocol/lit-node-client": "^6.4.0",
+    "@lit-protocol/vincent-sdk": "^0.1.0",
+    "ethers": "^6.9.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.4",
+    "eslint": "^8.55.0"
+  },
+  "exports": {
+    "./create-profile": "./dist/create-profile/index.js",
+    "./create-offer": "./dist/create-offer/index.js",
+    "./take-option": "./dist/take-option/index.js",
+    "./settle-option": "./dist/settle-option/index.js"
+  }
+}

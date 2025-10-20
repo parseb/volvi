@@ -29,29 +29,75 @@ contract OptionsProtocolGasless is OptionsProtocol,IERC1271{
     constructor(address _pyth,address _swapRouter,address _defaultStablecoin,address _gasVault,address _cowSettlement)OptionsProtocol(_pyth,_swapRouter,_defaultStablecoin){gasReimbursementVault=_gasVault;cowSettlement=_cowSettlement;fee=1e6;}
 
     function takeOptionGasless(OptionOffer calldata offer,bytes calldata offerSignature,uint256 fillAmount,uint16 duration,EIP3009Authorization calldata paymentAuth)external returns(uint256 tokenId){
-        bytes32 offerHash=keccak256(abi.encode(OPTION_OFFER_TYPEHASH,offer.writer,offer.underlying,offer.collateralAmount,offer.stablecoin,offer.isCall,offer.premiumPerDay,offer.minDuration,offer.maxDuration,offer.minFillAmount,offer.deadline,offer.configHash));
+        bytes32 offerHash=keccak256(abi.encode(OPTION_OFFER_TYPEHASH,offer.writer,offer.profileId,offer.underlying,offer.collateralAmount,offer.stablecoin,offer.isCall,offer.premiumPerDay,offer.minDuration,offer.maxDuration,offer.minFillAmount,offer.deadline,offer.configHash));
         require(ECDSA.recover(_hashTypedDataV4(offerHash),offerSignature)==offer.writer,"Sig");
         require(block.timestamp<=offer.deadline,"Exp");
         require(duration>=offer.minDuration&&duration<=offer.maxDuration,"Dur");
         require(fillAmount>=offer.minFillAmount,"Min");
         uint256 filled=filledAmounts[offerHash];
         require(filled+fillAmount<=offer.collateralAmount,"Max");
-        uint256 premium=(offer.premiumPerDay*duration*fillAmount)/offer.collateralAmount;
-        uint256 totalPayment=premium+fee;
+
+        // Check profile coverage
+        (bool covered, uint256 requiredUSDC, uint256 premiumUSDC) = checkProfileCoverage(offer.profileId, offer.underlying, fillAmount, duration);
+
+        uint256 expectedPremium = premiumUSDC; // premium in USDC units
+        uint256 expectedFee = fee; // gas fee already in contract basis
+        uint256 extraOutOfRange = 0;
+        if (!covered) {
+            extraOutOfRange = outOfRangeFee;
+        }
+
+        uint256 totalPayment = expectedPremium + expectedFee + extraOutOfRange;
+
         require(paymentAuth.to==address(this),"To");
         require(paymentAuth.value==totalPayment,"Amt");
+
+        // Pull USDC via EIP-3009 authorization
         IERC3009(offer.stablecoin).receiveWithAuthorization(paymentAuth.from,address(this),paymentAuth.value,paymentAuth.validAfter,paymentAuth.validBefore,paymentAuth.nonce,paymentAuth.v,paymentAuth.r,paymentAuth.s);
-        IERC20(offer.stablecoin).safeTransfer(offer.writer,premium);
-        IERC20(offer.stablecoin).safeTransfer(gasReimbursementVault,fee);
-        IERC20(offer.underlying).safeTransferFrom(offer.writer,address(this),fillAmount);
-        uint256 strikePrice=2000e8;
+
+        // Pay premium to writer
+        IERC20(offer.stablecoin).safeTransfer(offer.writer, expectedPremium);
+        // Pay gas fee to vault
+        IERC20(offer.stablecoin).safeTransfer(gasReimbursementVault, expectedFee);
+        // If out-of-range, send the out-of-range fee to feeCollector
+        if (extraOutOfRange > 0 && feeCollector != address(0)) {
+            IERC20(offer.stablecoin).safeTransfer(feeCollector, extraOutOfRange);
+        }
+
+        // Reserve USDC from profile: reduce available USDC by requiredUSDC if covered, else reserve what is available
+        LiquidityProfile storage p = liquidityProfiles[offer.profileId];
+        require(p.exists, "NoProfile");
+
+        uint256 collateralLocked;
+        TokenConfig memory cfg = _getConfig(offer.configHash);
+        if (offer.isCall) {
+            // For CALLs: swap requiredUSDC -> underlying and lock underlying
+            uint256 poolFee = cfg.poolFee;
+            address router = cfg.swapVenue;
+            // Swap with 0 min out for now (front-end should compute safe min)
+            uint256 amountOut = _swapFromStablecoin(offer.underlying, requiredUSDC, offer.stablecoin, router, poolFee, 0);
+            collateralLocked = amountOut;
+        } else {
+            // For PUTs: keep USDC as collateral
+            collateralLocked = requiredUSDC;
+        }
+
+        // Update profile reservations
+        p.reservedUSDC += requiredUSDC;
+
+        uint256 strikePrice = 0;
+        // Determine strike using oracle
+        (uint256 strikePriceOracle, ) = _getSettlementPrice(offer.underlying, cfg);
+        strikePrice = strikePriceOracle;
+
         tokenId=_nextTokenId++;
         _mint(paymentAuth.from,tokenId);
-        options[tokenId]=ActiveOption({tokenId:tokenId,writer:offer.writer,underlying:offer.underlying,collateralLocked:fillAmount,isCall:offer.isCall,strikePrice:strikePrice,startTime:uint64(block.timestamp),expiryTime:uint64(block.timestamp+(duration*1 days)),settled:false,configHash:offer.configHash,offerHash:offerHash});
+        options[tokenId]=ActiveOption({tokenId:tokenId,writer:offer.writer,underlying:offer.underlying,collateralLocked:collateralLocked,isCall:offer.isCall,strikePrice:strikePrice,startTime:uint64(block.timestamp),expiryTime:uint64(block.timestamp+(duration*1 days)),settled:false,configHash:offer.configHash,offerHash:offerHash});
+
         filledAmounts[offerHash]+=fillAmount;
         offerActiveOptions[offerHash].push(tokenId);
         settlementStates[tokenId]=SettlementState.Active;
-        emit OptionTakenGasless(tokenId,offerHash,paymentAuth.from,fillAmount,premium,fee);
+        emit OptionTakenGasless(tokenId,offerHash,paymentAuth.from,fillAmount,expectedPremium,expectedFee);
     }
 
     function isValidSignature(bytes32 orderDigest,bytes memory signature)external view override returns(bytes4){

@@ -25,7 +25,7 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
     bytes32 public constant ADMIN_ROLE = DEFAULT_ADMIN_ROLE;
 
     bytes32 internal constant OPTION_OFFER_TYPEHASH = keccak256(
-        "OptionOffer(address writer,address underlying,uint256 collateralAmount,address stablecoin,bool isCall,uint256 premiumPerDay,uint16 minDuration,uint16 maxDuration,uint256 minFillAmount,uint64 deadline,bytes32 configHash)"
+        "OptionOffer(address writer,bytes32 profileId,address underlying,uint256 collateralAmount,address stablecoin,bool isCall,uint256 premiumPerDay,uint16 minDuration,uint16 maxDuration,uint256 minFillAmount,uint64 deadline,bytes32 configHash)"
     );
 
     // ============ Structs ============
@@ -45,8 +45,31 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
         bool emergencyOverride;
     }
 
+    // ============ Liquidity Profile (Vincent) ============
+    struct LiquidityProfile {
+        address owner;
+        uint256 totalUSDC; // total USDC deposited
+        uint256 reservedUSDC; // USDC reserved for active options
+        bool exists;
+        uint16 maxLockDays;
+        uint256 minUnit; // scaled according to token decimals (e.g. 0.001 * 1e18)
+        uint256 minPremium; // minimum premium in USDC units
+    }
+
+    // profileId => profile
+    mapping(bytes32 => LiquidityProfile) public liquidityProfiles;
+    // profileId => allocations (token => pct in bps)
+    mapping(bytes32 => mapping(address => uint16)) public profileAllocationsBps;
+
+    // token address => decimals (admin can set; default assumed 18 if unset)
+    mapping(address => uint8) public tokenDecimals;
+
+    event TokenDecimalsSet(address indexed token, uint8 decimals);
+
+
     struct OptionOffer {
         address writer;
+        bytes32 profileId;
         address underlying;
         uint256 collateralAmount;
         address stablecoin;
@@ -113,6 +136,11 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
         address indexed token,
         address stablecoin
     );
+
+    // Liquidity profile events
+    event LiquidityProfileCreated(bytes32 indexed profileId, address indexed owner, uint256 totalUSDC);
+    event LiquidityProfileDeposited(bytes32 indexed profileId, address indexed from, uint256 amount);
+    event LiquidityProfileWithdrawn(bytes32 indexed profileId, address indexed to, uint256 amount);
 
     // ============ Constructor ============
 
@@ -409,6 +437,7 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
     function getOfferHash(OptionOffer calldata offer) public pure returns (bytes32) {
         return keccak256(abi.encode(
             offer.writer,
+            offer.profileId,
             offer.underlying,
             offer.collateralAmount,
             offer.stablecoin,
@@ -492,6 +521,7 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
         bytes32 structHash = keccak256(abi.encode(
             OPTION_OFFER_TYPEHASH,
             offer.writer,
+            offer.profileId,
             offer.underlying,
             offer.collateralAmount,
             offer.stablecoin,
@@ -581,6 +611,41 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
         amountOut = ISwapRouter(router).exactInputSingle(params);
     }
 
+    function _swapFromStablecoin(
+        address tokenOut,
+        uint256 amountIn,
+        address stablecoinIn,
+        address router,
+        uint24 poolFee,
+        uint256 amountOutMinimum
+    ) internal returns (uint256 amountOut) {
+        IERC20(stablecoinIn).forceApprove(router, amountIn);
+
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({
+            tokenIn: stablecoinIn,
+            tokenOut: tokenOut,
+            fee: poolFee,
+            recipient: address(this),
+            deadline: block.timestamp,
+            amountIn: amountIn,
+            amountOutMinimum: amountOutMinimum,
+            sqrtPriceLimitX96: 0
+        });
+
+        amountOut = ISwapRouter(router).exactInputSingle(params);
+    }
+
+    // Out-of-range fee (default 1 USDC if USDC has 6 decimals)
+    uint256 public outOfRangeFee = 1e6;
+
+    event OutOfRangeFeeUpdated(uint256 oldFee, uint256 newFee);
+
+    function setOutOfRangeFee(uint256 newFee) external onlyRole(ADMIN_ROLE) {
+        uint256 old = outOfRangeFee;
+        outOfRangeFee = newFee;
+        emit OutOfRangeFeeUpdated(old, newFee);
+    }
+
     function _removeFromActiveOptions(bytes32 offerHash, uint256 tokenId) internal {
         uint256[] storage activeOptions = offerActiveOptions[offerHash];
         for (uint256 i = 0; i < activeOptions.length; i++) {
@@ -600,6 +665,124 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
 
     function revokeBroadcasterRole(address broadcaster) external onlyRole(ADMIN_ROLE) {
         revokeRole(BROADCASTER_ROLE, broadcaster);
+    }
+
+    // Admin helper to set token decimals when token metadata is not available on-chain
+    function setTokenDecimals(address token, uint8 decimals) external onlyRole(ADMIN_ROLE) {
+        require(token != address(0), "Zero");
+        tokenDecimals[token] = decimals;
+        emit TokenDecimalsSet(token, decimals);
+    }
+
+    /// @notice Check whether a profile covers a requested option for given asset/amount/duration
+    /// @return covered whether the profile has sufficient allocation (in USDC) for this request
+    /// @return requiredUSDC amount of USDC required to collateralize this fill (approx)
+    /// @return premiumUSDC premium required (USDC) for the requested duration and fill
+    function checkProfileCoverage(
+        bytes32 profileId,
+        address underlying,
+        uint256 fillAmountTokenUnits,
+        uint16 durationDays
+    ) public view returns (bool covered, uint256 requiredUSDC, uint256 premiumUSDC) {
+        LiquidityProfile memory p = liquidityProfiles[profileId];
+        if (!p.exists) return (false, 0, 0);
+
+        // Determine token decimals
+        uint8 decimals = tokenDecimals[underlying];
+        if (decimals == 0) decimals = 18;
+
+        // Convert fillAmountTokenUnits to standardized uint with token decimals
+        // Assume fillAmountTokenUnits is expressed in token smallest units (i.e., already scaled)
+
+        // Fetch price via token config if available
+        bytes32 cfgHash = defaultConfigForToken[underlying];
+        TokenConfig memory cfg = tokenConfigs[cfgHash];
+        uint256 price;
+        uint256 confidence;
+        // Try Pyth/uniswap fallback; if fails, revert to 0
+        try this._getSettlementPrice(underlying, cfg) returns (uint256 pPrice, uint256 pConf) {
+            price = pPrice;
+            confidence = pConf;
+        } catch {
+            return (false, 0, 0);
+        }
+
+        // price valued in stablecoin units (assume 8 or 6 decimals depending on pyth, but we'll treat price as scaled)
+        // Compute required USDC to collateralize the fillAmount: requiredUSDC = (fillAmount * price) / (10**decimals)
+        requiredUSDC = (fillAmountTokenUnits * price) / (10 ** decimals);
+
+        // Compute premium: use profile.minUnit and profile.minPremium as references
+        // For now, assume premium is p.minPremium * (durationDays * 24 hours) * (fillAmount / minUnit)
+        if (p.minUnit == 0) {
+            // avoid division by zero; fallback
+            premiumUSDC = p.minPremium * uint256(durationDays) * 24;
+        } else {
+            uint256 units = (fillAmountTokenUnits + p.minUnit - 1) / p.minUnit; // ceil
+            premiumUSDC = (p.minPremium * units * uint256(durationDays) * 24);
+        }
+
+        // Determine allocation for this token (bps)
+        uint16 pctBps = profileAllocationsBps[profileId][underlying];
+        uint256 allocatedUSDC = (p.totalUSDC * uint256(pctBps)) / 10000;
+        // available = allocated - reserved
+        uint256 availableUSDC = 0;
+        if (allocatedUSDC > p.reservedUSDC) availableUSDC = allocatedUSDC - p.reservedUSDC;
+
+        covered = availableUSDC >= requiredUSDC;
+        return (covered, requiredUSDC, premiumUSDC);
+    }
+
+    // ============ Liquidity Profile Functions ============
+    function createLiquidityProfile(
+        uint256 totalUSDC,
+        uint16 maxLockDays,
+        uint256 minUnit_,
+        uint256 minPremium_
+    ) external returns (bytes32 profileId) {
+        require(totalUSDC > 0, "Zero deposit");
+        require(minPremium_ >= 1e4, "Min premium too low"); // at least 0.01 USDC (USDC 6 decimals -> 0.01 = 10000)
+
+        // Transfer USDC from creator to contract (caller must approve)
+        IERC20(defaultStablecoin).safeTransferFrom(msg.sender, address(this), totalUSDC);
+
+        profileId = keccak256(abi.encodePacked(msg.sender, block.timestamp, totalUSDC));
+        LiquidityProfile storage p = liquidityProfiles[profileId];
+        require(!p.exists, "Already exists");
+
+        p.owner = msg.sender;
+        p.totalUSDC = totalUSDC;
+        p.reservedUSDC = 0;
+        p.exists = true;
+        p.maxLockDays = maxLockDays;
+        p.minUnit = minUnit_;
+        p.minPremium = minPremium_;
+
+        emit LiquidityProfileCreated(profileId, msg.sender, totalUSDC);
+    }
+
+    function depositToProfile(bytes32 profileId, uint256 amount) external {
+        require(amount > 0, "Zero");
+        LiquidityProfile storage p = liquidityProfiles[profileId];
+        require(p.exists, "No profile");
+        require(p.owner == msg.sender, "Not owner");
+
+        IERC20(defaultStablecoin).safeTransferFrom(msg.sender, address(this), amount);
+        p.totalUSDC += amount;
+
+        emit LiquidityProfileDeposited(profileId, msg.sender, amount);
+    }
+
+    function withdrawFromProfile(bytes32 profileId, uint256 amount) external {
+        require(amount > 0, "Zero");
+        LiquidityProfile storage p = liquidityProfiles[profileId];
+        require(p.exists, "No profile");
+        require(p.owner == msg.sender, "Not owner");
+        require(p.totalUSDC - p.reservedUSDC >= amount, "Insufficient available");
+
+        p.totalUSDC -= amount;
+        IERC20(defaultStablecoin).safeTransfer(msg.sender, amount);
+
+        emit LiquidityProfileWithdrawn(profileId, msg.sender, amount);
     }
 
     // ============ Required Overrides ============
