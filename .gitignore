@@ -12,15 +12,17 @@ build/
 out/
 
 # Environment variables
-# Only .env.example files should be committed
+# Only .env.example and *.example files should be committed
 .env
 .env.*
 *.env
 **/.env
 **/.env.*
-# Explicitly keep .env.example files
+# Explicitly keep example files
 !.env.example
 !**/.env.example
+!*.example
+!**/*.example
 
 # Logs
 logs
