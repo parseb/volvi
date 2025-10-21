@@ -68,3 +68,6 @@ cache_forge/
 **/deployer-key.txt
 **/private-keys.txt
 **/secrets.txt
+
+# Documentation (internal development notes)
+docs/
