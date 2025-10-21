@@ -1,10 +1,31 @@
-# Volvi Options Protocol - Vincent Abilities
+# @volvi/abilities
 
-Custom Vincent abilities for the Volvi Options Protocol.
+Vincent abilities for Volvi Options Protocol - gasless options trading powered by Lit Protocol.
 
 ## Overview
 
-This package contains Lit Actions that enable users to interact with the options protocol through their Vincent Agent Wallets (PKPs). Each ability represents a specific operation users can delegate.
+This package contains 4 custom Vincent abilities that enable gasless, user-controlled options trading on Base (and other EVM chains):
+
+1. **Create Profile** - Create USDC liquidity profiles for writing options
+2. **Create Offer** - Sign option offers with EIP-712
+3. **Take Option** - Take options gaslessly with EIP-3009 USDC payments
+4. **Settle Option** - Settle expired options and claim profits
+
+Built with [Vincent](https://heyvincent.ai) and [Lit Protocol](https://litprotocol.com).
+
+## Features
+
+- **Gasless Transactions**: Users don't need ETH for gas fees
+- **USDC Payments**: Pay premiums in USDC using EIP-3009 authorization
+- **PKP Wallets**: Powered by Lit Protocol's Programmable Key Pairs
+- **EIP-712 Signatures**: Secure off-chain order signing
+- **Alchemy Gas Sponsorship**: Optional gas sponsorship via Alchemy
+
+## Installation
+
+```bash
+npm install @volvi/abilities
+```
 
 ## Abilities
 
@@ -13,40 +34,149 @@ This package contains Lit Actions that enable users to interact with the options
 
 Creates a USDC liquidity profile for writing options.
 
+**Package:** `@volvi/abilities/create-profile`
+
 **Parameters**:
-- `totalUSDC`: Amount of USDC to deposit
-- `maxLockDays`: Maximum option duration
-- `minUnit`: Minimum fill size
-- `minPremium`: Minimum premium
+- `contractAddress` - Options protocol contract address
+- `usdcAddress` - USDC token address
+- `totalUSDC` - Total USDC to deposit (in wei units)
+- `maxLockDays` - Maximum lock duration (1-365 days)
+- `minUnit` - Minimum fill unit
+- `minPremium` - Minimum premium in USDC
+- `chainId` - EVM chain ID (8453 for Base, 84532 for Base Sepolia)
+- `rpcUrl` - RPC endpoint URL
+- `alchemyGasSponsorApiKey` - (Optional) Alchemy API key for gas sponsorship
+- `alchemyGasSponsorPolicyId` - (Optional) Alchemy policy ID
 
-**Prerequisites**: USDC approval for OptionsProtocol contract
-
-**Policies Supported**:
-- Spending Limit (max USDC deposited)
-- Time Lock (rate limiting)
+**Returns**: `userOpHash`, `profileId`
 
 ### 2. Create Offer
-**Status**: 🚧 TODO
+**Status**: ✅ Implemented
 
-Signs an EIP-712 offer to write options.
+Signs an EIP-712 option offer for the orderbook.
+
+**Package:** `@volvi/abilities/create-offer`
+
+**Parameters**:
+- `contractAddress` - Options protocol contract address
+- `profileId` - Liquidity profile ID
+- `asset` - Asset token address
+- `quantity` - Amount of asset (in wei)
+- `strike` - Strike price (scaled to 6 decimals)
+- `premium` - Premium in USDC (scaled to 6 decimals)
+- `deadline` - Offer expiry timestamp
+- `chainId` - EVM chain ID
+
+**Returns**: `signature`, `offerHash`
 
 ### 3. Take Option
-**Status**: 🚧 TODO
+**Status**: ✅ Implemented
 
-Takes an option gaslessly using EIP-3009 USDC authorization.
+Takes an option gaslessly using EIP-3009 USDC payment authorization.
+
+**Package:** `@volvi/abilities/take-option`
+
+**Parameters**:
+- `contractAddress` - Options protocol contract address
+- `offer` - Option offer object
+- `offerSignature` - Writer's EIP-712 signature
+- `fillAmount` - Amount to fill (in wei)
+- `duration` - Option duration in days
+- `paymentAuth` - EIP-3009 authorization for USDC payment
+- `chainId` - EVM chain ID
+- `rpcUrl` - RPC endpoint URL
+- `alchemyGasSponsorApiKey` - (Optional) Alchemy API key
+- `alchemyGasSponsorPolicyId` - (Optional) Alchemy policy ID
+
+**Returns**: `userOpHash`, `tokenId`
 
 ### 4. Settle Option
-**Status**: 🚧 TODO
+**Status**: ✅ Implemented
 
-Settles an expired option.
+Settles an expired option and claims profits.
+
+**Package:** `@volvi/abilities/settle-option`
+
+**Parameters**:
+- `contractAddress` - Options protocol contract address
+- `tokenId` - Option NFT token ID
+- `chainId` - EVM chain ID
+- `rpcUrl` - RPC endpoint URL
+- `alchemyGasSponsorApiKey` - (Optional) Alchemy API key
+- `alchemyGasSponsorPolicyId` - (Optional) Alchemy policy ID
+
+**Returns**: `userOpHash`, `profit`
+
+## Usage
+
+### Import Abilities
+
+```typescript
+import {
+  createProfileAbility,
+  createOfferAbility,
+  takeOptionAbility,
+  settleOptionAbility
+} from '@volvi/abilities';
+```
+
+### Using with Vincent SDK
+
+```typescript
+import { VincentAbilityClient } from '@lit-protocol/vincent-app-sdk';
+
+// Initialize ability client
+const client = new VincentAbilityClient({
+  appId: YOUR_VINCENT_APP_ID,
+  abilityIpfsCid: createProfileAbility.ipfsCid,
+});
+
+// Execute ability
+const result = await client.executeAbility({
+  contractAddress: '0x...',
+  totalUSDC: '1000000000', // 1000 USDC (6 decimals)
+  maxLockDays: 30,
+  minUnit: '1000000', // 1 USDC minimum
+  minPremium: '10000', // 0.01 USDC minimum
+  chainId: 84532, // Base Sepolia
+  rpcUrl: 'https://sepolia.base.org',
+});
+```
+
+## Architecture
+
+Each ability follows the Vincent SDK pattern:
+
+1. **Zod Schema Validation** - Parameter validation using Zod
+2. **Precheck Function** - Validates state before execution (balances, approvals, etc.)
+3. **Execute Function** - Performs the blockchain interaction
+4. **Gas Sponsorship** - Uses `sponsoredGasContractCall()` for gasless transactions
+
+```
+src/
+├── create-profile/
+│   ├── schema.ts        # Zod parameter schema
+│   └── index.ts         # Vincent ability with precheck/execute
+├── create-offer/
+│   ├── schema.ts
+│   └── index.ts
+├── take-option/
+│   ├── schema.ts
+│   └── index.ts
+├── settle-option/
+│   ├── schema.ts
+│   └── index.ts
+└── index.ts             # Main exports
+```
+
+## Smart Contract Integration
+
+This package interacts with the Volvi Options Protocol smart contracts:
+
+- **Base Sepolia:** `0xD7AFfB2B3303e9Cb44C9d9aFA6bD938200b3C8F2`
+- **Base Mainnet:** TBD
 
 ## Development
-
-### Install Dependencies
-
-```bash
-pnpm install
-```
 
 ### Build
 
@@ -60,58 +190,28 @@ pnpm build
 pnpm test
 ```
 
-### Publish to IPFS
-
-After implementing an ability:
+### Lint
 
 ```bash
-pnpm run publish:abilities
+pnpm lint
 ```
 
-This will:
-1. Bundle the Lit Action code
-2. Publish to IPFS
-3. Return the CID for registering in Vincent Dashboard
+## Dependencies
 
-## Usage in Backend
+- `@lit-protocol/vincent-ability-sdk` - Vincent ability framework
+- `ethers` - Ethereum interactions
+- `zod` - Schema validation
 
-```typescript
-import { bundledVincentAbility as createProfileAbility } from '@volvi/abilities/create-profile';
-import { getVincentAbilityClient } from '@lit-protocol/vincent-app-sdk/abilityClient';
+## Links
 
-const client = getVincentAbilityClient({
-  bundledVincentAbility: createProfileAbility,
-  ethersSigner: delegateeSigner,
-});
-
-// Precheck
-const precheckResult = await client.precheck(params, {
-  delegatorPkpEthAddress: userPkpAddress,
-});
-
-// Execute
-if (precheckResult.success) {
-  const result = await client.execute(params, {
-    delegatorPkpEthAddress: userPkpAddress,
-  });
-}
-```
-
-## Architecture
-
-```
-src/
-├── create-profile/
-│   ├── schema.ts        # Zod parameter schema
-│   ├── precheck.ts      # Validation before execution
-│   ├── litAction.ts     # Lit Action code (runs in Lit network)
-│   └── index.ts         # Bundle ability
-├── create-offer/        # TODO
-├── take-option/         # TODO
-├── settle-option/       # TODO
-└── index.ts             # Main exports
-```
+- **Vincent Dashboard:** https://dashboard.heyvincent.ai
+- **Vincent Docs:** https://docs.heyvincent.ai
+- **Lit Protocol:** https://litprotocol.com
 
 ## License
 
 MIT
+
+## Contributing
+
+Contributions welcome! Please open an issue or PR on GitHub.

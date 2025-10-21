@@ -8,8 +8,14 @@
  * - Settle Option: Settle expired options
  */
 
-// Export all abilities
-export * from './create-profile';
-export * from './create-offer';
-export * from './take-option';
-export * from './settle-option';
+// Export bundled abilities for backend use
+export { bundledVincentAbility as createProfileAbility } from './create-profile';
+export { bundledVincentAbility as createOfferAbility } from './create-offer';
+export { bundledVincentAbility as takeOptionAbility } from './take-option';
+export { bundledVincentAbility as settleOptionAbility } from './settle-option';
+
+// Export types
+export type { CreateProfileParams } from './create-profile/schema';
+export type { CreateOfferParams } from './create-offer/schema';
+export type { TakeOptionParams } from './take-option/schema';
+export type { SettleOptionParams } from './settle-option/schema';
