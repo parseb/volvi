@@ -12,11 +12,19 @@ build/
 out/
 
 # Environment variables
+# Only .env.example files should be committed
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+# Explicitly keep .env.example files
+!**/.env.example
 
 # Logs
 logs
@@ -53,3 +61,14 @@ data/
 *.tmp
 *.temp
 .cache
+
+# Deployment artifacts
+deployments/*.txt
+!deployments/.gitkeep
+broadcast/
+cache_forge/
+
+# Sensitive deployment files
+**/deployer-key.txt
+**/private-keys.txt
+**/secrets.txt
