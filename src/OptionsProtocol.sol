@@ -564,7 +564,7 @@ contract OptionsProtocol is ERC721, AccessControl, EIP712 {
     function _getSettlementPrice(
         address token,
         TokenConfig memory config
-    ) internal view returns (uint256 price, uint256 confidence) {
+    ) public view returns (uint256 price, uint256 confidence) {
         // Try Pyth first
         if (config.pythPriceFeedId != bytes32(0)) {
             try pyth.getPriceUnsafe(config.pythPriceFeedId) returns (PythPrice memory pythPrice) {

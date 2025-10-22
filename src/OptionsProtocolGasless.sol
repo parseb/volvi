@@ -75,7 +75,7 @@ contract OptionsProtocolGasless is OptionsProtocol,IERC1271{
             uint256 poolFee = cfg.poolFee;
             address router = cfg.swapVenue;
             // Swap with 0 min out for now (front-end should compute safe min)
-            uint256 amountOut = _swapFromStablecoin(offer.underlying, requiredUSDC, offer.stablecoin, router, poolFee, 0);
+            uint256 amountOut = _swapFromStablecoin(offer.underlying, requiredUSDC, offer.stablecoin, router, uint24(poolFee), 0);
             collateralLocked = amountOut;
         } else {
             // For PUTs: keep USDC as collateral
