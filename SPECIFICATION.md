@@ -51,7 +51,7 @@ A fully gasless, decentralized options protocol where users only need USDC to tr
 |---------|---------|----------|--------|
 | Sepolia | `0xdF1AbDe2967F54E391b6d8FBC655F15847cf87ce` | 11155111 | ✅ Live |
 | Base Sepolia | `0xD7AFfB2B3303e9Cb44C9d9aFA6bD938200b3C8F2` | 84532 | ✅ Live |
-| Base Mainnet | TBD | 8453 | 🔜 Pending Audit |
+| Base Mainnet | `0x0c239d161780747763E13Bee4366Ad44D347608F` | 8453 | ✅ Production |
 
 ---
 

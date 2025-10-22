@@ -72,11 +72,11 @@ BALANCE_ETH=$(cast --to-unit $BALANCE_WEI ether)
 echo "Balance: $BALANCE_ETH ETH"
 echo ""
 
-# Check if balance is sufficient (0.05 ETH minimum)
-MIN_BALANCE="50000000000000000"  # 0.05 ETH in wei
+# Check if balance is sufficient (0.01 ETH minimum)
+MIN_BALANCE="10000000000000000"  # 0.01 ETH in wei
 if [ $(echo "$BALANCE_WEI < $MIN_BALANCE" | bc) -eq 1 ]; then
     echo "${RED}❌ Error: Insufficient balance${NC}"
-    echo "Required: >= 0.05 ETH"
+    echo "Required: >= 0.01 ETH (actual deployment ~0.003-0.005 ETH)"
     echo "Current: $BALANCE_ETH ETH"
     echo ""
     echo "Fund your address: $DEPLOYER_ADDRESS"

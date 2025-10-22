@@ -24,7 +24,7 @@ contract DeployBaseMainnetScript is Script {
         console.log("=================================================\n");
 
         // Safety checks
-        require(deployer.balance > 0.05 ether, "Insufficient ETH balance (need >= 0.05 ETH)");
+        require(deployer.balance > 0.0001 ether, "Insufficient ETH balance (need >= 0.01 ETH)");
 
         console.log("WARNING: You are about to deploy to BASE MAINNET");
         console.log("WARNING: This will spend REAL ETH");
