@@ -1,6 +1,6 @@
 {
   "name": "@parseb/volvi-settle-option",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Vincent ability for settling expired options and claiming profits in Volvi Options Protocol",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -24,7 +24,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/parseb/volvi.git",
+    "url": "git+https://github.com/parseb/volvi.git",
     "directory": "packages/ability-settle-option"
   },
   "scripts": {
@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.16.0",
+    "ipfs-only-hash": "^4.0.0",
     "typescript": "^5.3.0"
   }
 }
