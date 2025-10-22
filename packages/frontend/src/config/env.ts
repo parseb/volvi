@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const envSchema = z.object{
+const envSchema = z.object({
   VITE_VINCENT_APP_ID: z.string().min(1, 'VITE_VINCENT_APP_ID is required'),
   VITE_REDIRECT_URI: z.string().url('Invalid redirect URI'),
   VITE_BACKEND_URL: z.string().url('Invalid backend URL'),
