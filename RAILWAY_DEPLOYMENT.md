@@ -62,19 +62,18 @@ ALCHEMY_POLICY_ID=your_policy_id (optional)
 
 ### 4. Configure Build Settings
 
-Railway should auto-detect, but verify:
+Railway should auto-detect from `railway.json` and `nixpacks.toml`.
 
-```json
-{
-  "build": {
-    "command": "pnpm build",
-    "rootDirectory": "packages/backend"
-  },
-  "start": {
-    "command": "node dist/index.js"
-  }
-}
-```
+**If auto-detection fails**, manually set in Settings → Deploy:
+- **Root Directory**: `/packages/backend` (or leave empty if deploying from backend folder)
+- **Build Command**: `pnpm install && pnpm build`
+- **Start Command**: `node dist/index.js`
+- **Watch Paths**: `/packages/backend/**`
+
+**Important**: Railway needs to:
+1. Install dependencies: `pnpm install`
+2. Build TypeScript: `pnpm build` (creates `dist/` folder)
+3. Run compiled code: `node dist/index.js`
 
 ### 5. Deploy
 
@@ -185,7 +184,17 @@ Server listening on port 3001
 
 ### Backend Won't Start
 
-**Check Railway logs for errors:**
+**Error: `Cannot find module '/app/src/index.js'`**
+
+This means Railway is looking in the wrong location. The fix:
+
+1. **Railway should auto-detect** the config files (`railway.json`, `nixpacks.toml`)
+2. If not, manually set in Railway dashboard:
+   - **Build Command**: `pnpm install && pnpm build`
+   - **Start Command**: `node dist/index.js`
+   - **Root Directory**: `/packages/backend`
+
+**Check Railway logs for other errors:**
 
 1. MongoDB connection issues:
    ```
@@ -205,6 +214,22 @@ Server listening on port 3001
    ```
    → Check pnpm install ran successfully
    → Verify package.json scripts
+   → Ensure TypeScript compiled (check for `dist/` folder in logs)
+
+### Frontend Won't Build
+
+**Error: `Dockerfile does not exist`**
+
+Railway is trying to use Docker but frontend is a static Vite site. The fix:
+
+1. **Railway should auto-detect** from `railway.json` and `nixpacks.toml`
+2. If not, in Railway Settings → Deploy:
+   - **Builder**: Select "Nixpacks" (not Docker)
+   - **Build Command**: `pnpm install && pnpm build`
+   - **Start Command**: `pnpm preview --port $PORT --host 0.0.0.0`
+   - **Root Directory**: `/packages/frontend`
+
+**Note**: For production, Vercel or Netlify are better choices for static sites than Railway.
 
 ### Frontend Can't Connect to Backend
 
