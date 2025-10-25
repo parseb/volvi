@@ -1,5 +1,5 @@
-import { getCollections } from './connection.js';
-import type { Profile, Offer, Position, TransactionLog } from './schemas.js';
+import { getCollections } from './connection';
+import type { Profile, Offer, Position, TransactionLog } from './schemas';
 
 /**
  * Storage layer for database operations

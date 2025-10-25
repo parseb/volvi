@@ -1,8 +1,8 @@
 import express from 'express';
-import { registerRoutes } from './lib/express/index.js';
-import { env } from './lib/env.js';
-import { serviceLogger } from './lib/logger.js';
-import { connectToDatabase, disconnectFromDatabase } from './db/index.js';
+import { registerRoutes } from './lib/express/index';
+import { env } from './lib/env';
+import { serviceLogger } from './lib/logger';
+import { connectToDatabase, disconnectFromDatabase } from './db/index';
 
 const app = express();
 
