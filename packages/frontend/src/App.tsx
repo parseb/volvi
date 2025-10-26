@@ -1,20 +1,17 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { VincentProvider } from '@lit-protocol/vincent-app-sdk/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { vincentConfig } from './config/vincent';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { useVincent } from './hooks/useVincent';
 
 const queryClient = new QueryClient();
 
+// Temporary: Skip auth check until Vincent SDK is properly configured
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useVincent();
-
-  if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
-
+  // TODO: Re-enable auth check when Vincent SDK is fixed
+  // const { isAuthenticated } = useVincent();
+  // if (!isAuthenticated) {
+  //   return <Navigate to="/" replace />;
+  // }
   return <>{children}</>;
 }
 
@@ -38,11 +35,9 @@ function AppRoutes() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <VincentProvider {...vincentConfig}>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </VincentProvider>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }
