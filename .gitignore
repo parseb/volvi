@@ -73,3 +73,5 @@ cache_forge/
 
 # Documentation (internal development notes)
 docs/
+*.md
+**/*.md
