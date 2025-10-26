@@ -75,3 +75,6 @@ cache_forge/
 docs/
 *.md
 **/*.md
+# Allow README files
+!README.md
+!**/README.md
