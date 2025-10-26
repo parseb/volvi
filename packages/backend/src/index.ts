@@ -1,8 +1,8 @@
 import express from 'express';
-import { registerRoutes } from './lib/express/index.ts';
-import { env } from './lib/env.ts';
-import { serviceLogger } from './lib/logger.ts';
-import { connectToDatabase, disconnectFromDatabase } from './db/index.ts';
+import { registerRoutes } from './lib/express/index';
+import { env } from './lib/env';
+import { serviceLogger } from './lib/logger';
+import { connectToDatabase, disconnectFromDatabase } from './db/index';
 
 const app = express();
 
