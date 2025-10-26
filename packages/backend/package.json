@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "echo 'Build step skipped - using tsx runtime'",
-    "start": "tsx src/index.ts",
+    "start": "tsx --tsconfig tsconfig.json src/index.ts",
     "clean": "rm -rf dist",
     "lint": "eslint src --ext .ts",
     "test": "vitest"
