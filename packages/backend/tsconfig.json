@@ -23,7 +23,8 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "allowImportingTsExtensions": false,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "composite": false,
     "incremental": false
   },

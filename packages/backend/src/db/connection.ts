@@ -1,5 +1,5 @@
 import { MongoClient, Db, Collection } from 'mongodb';
-import type { Profile, Offer, Position, TransactionLog } from './schemas';
+import type { Profile, Offer, Position, TransactionLog } from './schemas.ts';
 
 /**
  * MongoDB connection and database instance

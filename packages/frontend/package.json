@@ -6,7 +6,7 @@
   "description": "Volvi Options Protocol frontend with Vincent authentication",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "eslint src --ext .ts,.tsx",

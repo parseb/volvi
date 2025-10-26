@@ -2,6 +2,6 @@
  * Database module exports
  */
 
-export * from './schemas';
-export * from './connection';
-export * from './storage';
+export * from './schemas.ts';
+export * from './connection.ts';
+export * from './storage.ts';
